@@ -6,8 +6,8 @@
 
 ## 能干什么
 
-- 目前可以搜索两个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）
-- 页面顶部两个小圆点，显示两个站当前连不连得上，30 秒自动刷新
+- 目前可以搜索三个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）、**YTS**（英文电影，画质分版本）
+- 页面顶部三个小圆点，显示各站当前连不连得上，30 秒自动刷新
 - 结果里「下载」直接进 aria2，「复制」拿磁力链接
 - 手机浏览器适配，也能塞进 AriaNg 当浮动按钮
 
@@ -16,7 +16,7 @@
 - 一台能 root 的安卓手机（root 是为了跑 httpd 和 aria2），或任意 Linux 小机器
 - busybox，要带 httpd 和 CGI
 - aria2 已开启 RPC
-- 设备网络能访问 `btsow.live` 和 `apibay.org`
+- 设备网络能访问 `btsow.live`、`apibay.org`、`yts.gg`
 
 ## 部署
 
@@ -35,8 +35,9 @@ sh scripts/start-service.sh 8080 /data/adb/srv/magnet   # 启动
 src/index.html          搜索页面（单文件，样式脚本都在这）
 src/cgi-bin/search.cgi  apibay 搜索转发
 src/cgi-bin/btsow.cgi   btsow 搜索转发
+src/cgi-bin/yts.cgi     YTS 搜索转发（英文电影，带域名回退）
 src/cgi-bin/add.cgi     推磁力给本机 aria2（rpc-secret 在服务端读，不进页面）
-src/cgi-bin/status.cgi  探测两个站通不通（并行，约 8 秒出结果）
+src/cgi-bin/status.cgi  探测三个站通不通（并行，约 8 秒出结果）
 scripts/deploy.sh       部署
 scripts/start-service.sh 启动
 static/httpd.conf       busybox httpd 配置（只有一行：*.cgi 用 sh 执行）
@@ -49,8 +50,9 @@ docs/deploy.md          部署与排障
 |---|---|---|---|
 | `/cgi-bin/search.cgi` | GET | `q=关键词`（URL 编码） | apibay 原始 JSON 数组 |
 | `/cgi-bin/btsow.cgi` | POST | 正文为 UTF-8 原文关键词 | btsow 原始 JSON |
+| `/cgi-bin/yts.cgi` | GET | `q=关键词`（URL 编码） | YTS 原始 JSON（`data.movies[].torrents[]`） |
 | `/cgi-bin/add.cgi` | GET | `h=info_hash`（32 或 40 位十六进制） | aria2 的 JSONRPC 响应 |
-| `/cgi-bin/status.cgi` | GET | 无 | `{"btsow":{"ok":true,"code":"200"},"tpb":{...},"t":时间戳}` |
+| `/cgi-bin/status.cgi` | GET | 无 | `{"btsow":{"ok":true,"code":"200"},"tpb":{...},"yts":{...},"t":时间戳}` |
 
 ## 说明
 

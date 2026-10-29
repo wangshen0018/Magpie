@@ -25,6 +25,7 @@ button:disabled{background:#9bbce0}
 .leech{color:#c1121f}
 .badge{font-size:10px;padding:2px 6px;border-radius:4px;background:#eef3fb;color:#0b5ed7}
 .badge.b{background:#fff1e6;color:#c05621}
+.badge.y{background:#e8f6ee;color:#1a7f4b}
 .ops{display:flex;gap:8px;margin-left:auto}
 .ops button{padding:6px 12px;font-size:13px;background:#eef3fb;color:#0b5ed7;border-radius:6px}
 .ops button.pri{background:#007bff;color:#fff}
@@ -48,12 +49,14 @@ button:disabled{background:#9bbce0}
 <div class="statusbar" id="statusbar">
   <span class="st" data-k="btsow"><i class="dot"></i> BTSOW</span>
   <span class="st" data-k="tpb"><i class="dot"></i> TPB</span>
+  <span class="st" data-k="yts"><i class="dot"></i> YTS</span>
   <span class="st-ts" id="st-ts"></span>
 </div>
 <div class="tabs">
   <div class="tab on" data-src="all" onclick="setTab(this)">全部</div>
   <div class="tab" data-src="btsow" onclick="setTab(this)">BTSOW</div>
   <div class="tab" data-src="tpb" onclick="setTab(this)">TPB</div>
+  <div class="tab" data-src="yts" onclick="setTab(this)">YTS</div>
 </div>
 <div id="out"><div class="hint">输入关键词开始搜索</div></div>
 <script>
@@ -119,8 +122,30 @@ async function srcBtsow(q){
                   updated:(+x.lastUpdateTime||0)*1000}));
   } catch(e) { return []; }
 }
-
-// 页面加载后立即测一次（脚本在 body 末尾，直接调用）
+// YTS：只有英文电影，字段与 apibay 不同。
+// 注意 size 是 "487.87 MB" 这种字符串，必须取 size_bytes，否则 +x.size 得 NaN 显示 0 B。
+// 一部电影有多个清晰度版本（实测 limit=1 就有 2~3 个 torrent），全部展开成独立条目。
+async function srcYTS(q){
+  try {
+    // 后端最多试两个域名、约 18 秒，这里留 20 秒余量
+    const r = await fetchT('cgi-bin/yts.cgi?q=' + encodeURIComponent(q), {}, 20000);
+    const j = await r.json();
+    const movies = (j && j.data && Array.isArray(j.data.movies)) ? j.data.movies : [];
+    const rows = [];
+    for (const m of movies) {
+      if (!m || !Array.isArray(m.torrents)) continue;
+      const label = m.title_long || ((m.title || '') + (m.year ? ' (' + m.year + ')' : ''));
+      for (const t of m.torrents) {
+        if (!t || !isHash(t.hash)) continue;
+        rows.push({hash:t.hash, name:label + ' [' + (t.quality || '?') + ']',
+                   size:+t.size_bytes||0, seeders:+t.seeds||0, leechers:+t.peers||0, src:'yts',
+                   updated:(+t.date_uploaded_unix||0)*1000});
+      }
+    }
+    return rows;
+  } catch(e) { return []; }
+}
+// 页面加载后立即测一次，之后按 next 间隔循环
 async function checkStatus(){
   const sb = document.getElementById('statusbar');
   const ts = sb.querySelector('.st-ts');
@@ -146,10 +171,12 @@ async function checkStatus(){
 }
 
 function sortAll(){
-  // TPB 有做种数，排前面；BTSOW 中文资源多，按最后更新时间降序排后面
-  const t = ALL.filter(x => x.src === 'tpb').sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
-  const b = ALL.filter(x => x.src === 'btsow').sort((a, b2) => (+b2.updated || 0) - (+a.updated || 0));
-  ALL = t.concat(b);
+  // 有做种数的排前面（TPB / YTS），BTSOW 中文资源多、按更新时间排后面
+  const withSeeds = ALL.filter(x => x.seeders !== null)
+    .sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
+  const b = ALL.filter(x => x.seeders === null)
+    .sort((a, b2) => (+b2.updated || 0) - (+a.updated || 0));
+  ALL = withSeeds.concat(b);
 }
 
 async function doSearch(){
@@ -158,9 +185,9 @@ async function doSearch(){
   go.disabled = true;
   ALL = [];
   const myReq = ++REQ;
-  out.innerHTML = '<div class="hint">搜索中…<br><span style="color:#999;font-size:12px">BTSOW 一般 1 秒内出，TPB 可能要 20 秒以上</span></div>';
+  out.innerHTML = '<div class="hint">搜索中…<br><span style="color:#999;font-size:12px">BTSOW 一般 1 秒内出，YTS 约 3 秒，TPB 可能要 20 秒以上</span></div>';
 
-  // 渐进渲染：两个源快慢差很多，谁先回来先显示，不等 Promise.all 齐了才出
+  // 渐进渲染：三个源快慢差很多，谁先回来先显示，不等 Promise.all 齐了才出
   const merge = rows => {
     if (myReq !== REQ) return;   // 已被更晚发起的搜索取代，丢弃这次结果
     ALL = ALL.concat(rows);
@@ -168,12 +195,12 @@ async function doSearch(){
     render();
   };
 
-  await Promise.all([srcBtsow(q).then(merge), srcTPB(q).then(merge)]);
+  await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcTPB(q).then(merge)]);
 
   if (myReq !== REQ) return;
   go.disabled = false;
   if (!ALL.length) {
-    out.innerHTML = '<div class="err">两个源都没有返回结果<br><span style="color:#999;font-size:12px">可能是网络不通，或源站临时不可用</span></div>';
+    out.innerHTML = '<div class="err">三个源都没有返回结果<br><span style="color:#999;font-size:12px">可能是网络不通，或源站临时不可用</span></div>';
     return;
   }
   render();
@@ -186,7 +213,7 @@ function render(){
     <div class="item">
       <div class="name">${esc(x.name)}</div>
       <div class="meta">
-        <span class="badge ${x.src==='btsow'?'b':''}">${x.src==='btsow'?'BTSOW':'TPB'}</span>
+        <span class="badge ${x.src==='btsow'?'b':(x.src==='yts'?'y':'')}">${x.src==='btsow'?'BTSOW':(x.src==='yts'?'YTS':'TPB')}</span>
         <span>${fmtSize(x.size)}</span>
         ${x.seeders===null ? (x.updated?`<span class="time">🕒 ${fmtTime(x.updated)}</span>`:'') : `<span class="seed">▲ ${x.seeders}</span><span class="leech">▼ ${x.leechers}</span>`}
         <span class="ops">

@@ -16,3 +16,6 @@ desktop.ini
 *.zip
 *.tar.gz
 *.7z
+
+# ��ʱ̽��/���Խű������ύ��
+.tmp-*.sh

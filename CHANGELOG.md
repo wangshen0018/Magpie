@@ -1,5 +1,22 @@
 # 更新日志
 
+## 2026-10-29 新增第三源：YTS
+
+在 K40 上实测了 60+ 个"国内可直连"的磁力站候选，结论：
+
+- 唯一值得接入的是 **YTS**（`yts.gg/api/v2/list_movies.json`，官方 JSON API，实测 1~2 秒返回，含 hash/seeds/peers/size_bytes/quality）。它只有英文电影，与 apibay 内容重叠，价值主要在冗余——而实测发现 **apibay 的可达性随时段剧烈波动**（同一会话内早先 12 秒返回 100 条、晚间直连 35 秒超时），YTS 正好补位。
+- 其余候选全军覆没，且失败原因不是 DNS 污染：curl 都能解析到真实公网 IP，是 IP/SNI 层被阻断，换 doh/分流救不回来，别在这上面花时间。追镜像名单是跑步机（域名更换以周计，博客清单必然过期）。
+- 假阳性提醒：`mztf`/`magent`/`gp5` 返回 200 实为域名停放页；`91sou`/`jizhi` 返回 200 是同名无关站；`pirateproxy` 返回 200 是广告 HTML。只认 HTTP 200 会写出三个死源。
+
+代码改动：
+
+- 新增 `src/cgi-bin/yts.cgi`：转发 YTS 搜索。官方已宣布 API base 迁往 `movies-api.accel.li`（sunset 2026-04-10），`yts.gg` 目前仍在服务，所以脚本内置**域名回退**（依次尝试，校验返回是闭合且 `"status":"ok"` 的完整 JSON 才采用），避免单域名失效变死源。
+- 前端加 `srcYTS()`：一部电影展开多个清晰度版本；**注意 `size` 字段是 `"487.87 MB"` 字符串，必须取 `size_bytes`**。页面加 YTS 标签与绿色徽标。
+- `status.cgi` 并行探测扩到三个源，返回体加 `yts` 字段；顺带清掉遗留的 `cat=0`（与 search.cgi 的修复保持一致）。
+- `sortAll()` 改为按"有无做种数"分组（TPB/YTS 有做种数排前，BTSOW 按更新时间排后），不再按源名硬编码。
+- `deploy.sh` 自检清单加入 `yts.cgi`。
+- README / CHANGELOG 同步为三源。
+
 ## 2026-10-29 K40 实机部署验证
 
 在红米 K40（root + busybox 1.36.1 + aria2 RPC）上部署跑通，过程中修掉 4 个问题：
