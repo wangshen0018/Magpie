@@ -1,0 +1,8 @@
+# 统一换行符：仓库内一律 LF
+# 脚本要在安卓/Linux 上用 sh 执行，CRLF 会导致 "not found" 之类的怪错误
+* text=auto eol=lf
+*.cgi text eol=lf
+*.sh  text eol=lf
+*.conf text eol=lf
+*.md  text eol=lf
+*.html text eol=lf
