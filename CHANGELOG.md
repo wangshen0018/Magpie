@@ -1,76 +1,45 @@
 # 更新日志
 
-所有重要的版本更新都会记录在此文件中。
+## 2026-10-29 整理
 
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
-并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
+修掉的问题（全部在本机模拟部署后实测过）：
 
-## [Unreleased]
+**部署链路**
 
-### 计划中
-- [ ] 添加更多磁力源支持
-- [ ] 实现搜索结果缓存
-- [ ] 添加用户认证功能
-- [ ] 支持多语言界面
-- [ ] 优化移动端用户体验
+- `deploy.sh` 没有把 `httpd.conf` 复制到部署目录，照着文档启动会读不到配置；现在一起复制，并在部署后自检文件是否齐全，缺文件直接报错
+- `deploy.sh` 原来用相对路径 `cp src/...`，只能在仓库根目录执行；改用脚本自身位置推算仓库路径
+- `httpd.conf` 里混了 `Timeout` / `MaxClients` / `DirectoryIndex` 等 Apache 写法，busybox httpd 不认；只保留 `*.cgi` 映射，超时改由启动参数 `-t 60` 给
+- `start-service.sh` 每次启动都重写一遍配置（会覆盖部署好的文件），且 busybox 路径写死 `/data/adb/magisk/busybox`；改为自动查找 busybox、校验配置存在后直接启动
+- 删除 `test-deploy.sh`（其中硬编码了 `/var/minis/workspace/...` 绝对路径，检查逻辑已并入 `deploy.sh`）
 
-## [1.0.0] - 2026-10-29
+**接口行为**
 
-### 新增
-- ✅ 初始版本发布
-- ✅ 双源聚合搜索（btsow + apibay）
-- ✅ 实时源状态显示
-- ✅ 集成到 AriaNg 浮动按钮
-- ✅ 响应式设计，支持移动端
-- ✅ 硬超时保护机制
-- ✅ 一键部署脚本
-- ✅ 完整的文档和示例
+- `status.cgi` 原为串行探测、单个 1.5 秒超时：最坏 3 秒返回，而前端 2.5 秒就放弃，状态条必然全红。改为并行探测、单个 8 秒，前端等 10 秒
+- `add.cgi` 对 info_hash 不做任何校验；现在只接受 32/40 位十六进制
+- `add.cgi` 未配 `rpc-secret` 时仍发送 `token:` 前缀，aria2 必然鉴权失败；现在无密钥时不带该参数
+- `add.cgi` 把 aria2 配置路径与端口写死；改为读 `ARIA2_CONF` 环境变量并依次尝试常见路径、从 `rpc-listen-port` 读端口
+- `add.cgi` 在 aria2 返回非 JSON 文本时原样透传，前端解析报错；现在统一返回 `{"error":...}`
+- `search.cgi` 在 apibay 搜不到时，会把一条 `info_hash` 全 0 的 `No results returned` 占位记录当正常结果返回；现在直接过滤为空
+- `search.cgi` / `btsow.cgi` 在 curl 超时时会把**半截 JSON** 原样输出，前端 `JSON.parse` 必报错；现在校验首尾是否闭合，不完整就降级为空结果
+- `btsow.cgi` 收到纯空格时不判空，btsow 会返回整站最新列表；现在先 trim 再判空，并限制 200 字节
+- 各 CGI 的 `curl` 路径写死 `/system/bin/curl`；改为先查 PATH 再退回该路径
+- 去掉 CGI 的 `Access-Control-Allow-Origin: *`（同源用不到，留着等于对任意网页开放代理）
 
-### 功能特性
-- **双源搜索**: 
-  - BTSOW: 中文资源丰富，支持中文搜索
-  - APIBay: 英文资源，有做种数统计
-- **状态监测**: 实时显示源连通性，30秒自动刷新
-- **零新增常驻**: 复用现有 aria2/AriaNg，不增加后台服务
-- **资源优化**: 仅需 1-2MB 内存，空闲时 CPU 几乎为 0
-- **中文友好**: 针对中文用户的使用习惯优化
-- **移动端适配**: 专为手机浏览器设计，支持触摸操作
+**前端**
 
-### 技术实现
-- **前端**: 纯 HTML/CSS/JavaScript，无框架依赖
-- **后端**: Shell CGI 脚本，轻量级
-- **服务**: 支持 busybox httpd，单文件部署
-- **网络**: HTTP/HTTPS，支持 CORS 跨域
+- `srcTPB` 的超时（6 秒）短于后端（12 秒），后端还没返回前端就放弃了；改为 14 秒 / 17 秒，与后端超时对齐
+- 做种数缺失时排序产生 `NaN`；改为 `(+x.seeders || 0)`
+- 状态探测超时原来一律标红，网络抖动会误报源站故障；现在超时标灰（未知），只有源站明确返回非 200 才标红，失败后 10 秒重试
+- 两个源都没结果时，提示改为区分"网络不通或源站不可用"，不再只说"没有结果"
 
-### 部署要求
-- Linux 设备（支持 busybox httpd）
-- 已有 aria2c 服务
-- 网络可访问 btsow.live 和 apibay.org
-- 移动端：支持现代浏览器的手机
+**文档**
 
-### 文档
-- 📖 [快速开始](README.md)
-- 📖 [部署指南](docs/deploy.md)
-- 📖 [API 文档](docs/api.md)
-- 📖 [故障排除](docs/troubleshooting.md)
-- 📖 [贡献指南](CONTRIBUTING.md)
+- `README.md` 重写：只说明这是什么、怎么部署、怎么用，去掉愿景、路线图、成功指标
+- 删除 `ROADMAP.md`、`docs/ROADMAP.md`、`MAINTENANCE.md`、`CONTRIBUTING.md`、`SECURITY.md`、`AI-STATEMENT.md`、`docs/DEVELOPMENT.md`、`docs/SIMPLE_README.md`
+- 删除 `.github/` 下的 Issue / PR 模板与 FUNDING 配置
+- `docs/api.md`、`docs/troubleshooting.md` 合并进 `docs/deploy.md`
+- `.gitignore` 精简，去掉与本项目无关的 Node / Python / IDE 条目
 
-### 许可证
-- [MIT License](LICENSE)
+## 1.0.0 - 2026-10-29
 
----
-
-## 版本说明
-
-### 版本号规则
-- **主版本号**: 不兼容的 API 修改
-- **次版本号**: 向下兼容的功能性新增
-- **修订号**: 向下兼容的问题修正
-
-### 更新频率
-- 重大版本：每 6-12 个月
-- 功能版本：根据需求情况
-- 修正版本：问题修复后立即发布
-
-### 贡献
-欢迎通过 [GitHub Issues](https://github.com/你的用户名/magnet-github/issues) 和 Pull Request 参与项目开发！
+初版：双源搜索（btsow + apibay）、源站状态显示、一键推送 aria2、移动端适配。

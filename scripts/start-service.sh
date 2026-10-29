@@ -1,69 +1,58 @@
-#!/bin/bash
-# 启动磁力搜索服务
+#!/system/bin/sh
+# 启动服务：sh scripts/start-service.sh [端口] [部署目录]
+# 默认端口 8080，默认部署目录 /data/adb/srv/magnet
+#
+# 前置条件：已运行过 scripts/deploy.sh（httpd.conf 由 deploy.sh 复制过去）
 
-set -e
-
-# 配置
 PORT=${1:-8080}
-TARGET_DIR=${2:-/data/adb/srv/magnet}
-HTTPD_BIN="/data/adb/magisk/busybox"
+TARGET=${2:-/data/adb/srv/magnet}
+WWW="$TARGET/www"
+CONF="$WWW/httpd.conf"
 
-# 检查依赖
-echo "检查依赖..."
-if [ ! -f "$HTTPD_BIN" ]; then
-    echo "错误: busybox 未找到在 $HTTPD_BIN"
-    echo "请确保 busybox 已安装"
-    exit 1
+# 找 busybox：优先 PATH，其次 Magisk / 系统常见位置
+BB=""
+for p in "$(command -v busybox 2>/dev/null)" \
+         /data/adb/magisk/busybox \
+         /data/adb/ksu/bin/busybox \
+         /system/xbin/busybox \
+         /system/bin/busybox; do
+  if [ -n "$p" ] && [ -x "$p" ]; then
+    BB="$p"
+    break
+  fi
+done
+
+if [ -z "$BB" ]; then
+  echo "未找到 busybox。请先安装 busybox（Magisk 模块或系统自带）。"
+  exit 1
 fi
 
-if [ ! -d "$TARGET_DIR/www" ]; then
-    echo "错误: 目标目录不存在: $TARGET_DIR/www"
-    echo "请先运行: ./scripts/deploy.sh $TARGET_DIR"
-    exit 1
+if [ ! -f "$CONF" ]; then
+  echo "缺少配置文件: $CONF"
+  echo "请先运行: sh scripts/deploy.sh $TARGET"
+  exit 1
 fi
 
-# 检查端口
-if netstat -tln 2>/dev/null | grep -q ":$PORT "; then
-    echo "警告: 端口 $PORT 已被占用"
-    echo "请更换端口或停止现有服务"
+# 端口占用检查（有 netstat 才查，没有就跳过）
+if command -v netstat >/dev/null 2>&1; then
+  if netstat -tln 2>/dev/null | grep -q ":$PORT "; then
+    echo "端口 $PORT 已被占用，换一个端口或先停掉已有服务。"
     exit 1
+  fi
 fi
 
-# 创建配置文件
-HTTPD_CONF="$TARGET_DIR/www/httpd.conf"
-cat > "$HTTPD_CONF" << 'EOF'
-# busybox httpd 配置
-*.cgi:/system/bin/sh
-DirectoryIndex index.html
-Timeout 30
-MaxClients 10
-KeepAlive off
-EOF
+echo "busybox: $BB"
+echo "端口:    $PORT"
+echo "目录:    $WWW"
+echo "配置:    $CONF"
 
-echo "启动服务..."
-echo "端口: $PORT"
-echo "目录: $TARGET_DIR/www"
-echo "配置: $HTTPD_CONF"
+"$BB" httpd -p "$PORT" -h "$WWW" -c "$CONF" -t 60
+RC=$?
 
-# 启动服务
-"$HTTPD_BIN" httpd -p "$PORT" -h "$TARGET_DIR/www" -c "$HTTPD_CONF" &
-
-# 等待服务启动
-sleep 2
-
-# 检查服务状态
-if ps | grep -q "httpd -p $PORT"; then
-    echo "✓ 服务启动成功"
-    echo "访问: http://localhost:$PORT/"
-    echo "PID: $!"
-else
-    echo "✗ 服务启动失败"
-    exit 1
+if [ "$RC" -ne 0 ]; then
+  echo "启动失败（退出码 $RC）。"
+  exit "$RC"
 fi
 
-# 保存 PID
-echo "$!" > "$TARGET_DIR/www/httpd.pid"
-
-echo ""
-echo "停止服务: kill \$(cat $TARGET_DIR/www/httpd.pid)"
-echo "查看日志: tail -f /var/log/httpd*.log"
+echo "已启动，访问 http://本机IP:$PORT/"
+echo "停止：pkill -f 'httpd -p $PORT'"

@@ -95,17 +95,18 @@ async function fetchT(url, opt, ms){
 }
 async function srcTPB(q){
   try {
-    const r = await fetchT('cgi-bin/search.cgi?q=' + encodeURIComponent(q), {}, 6000);
+    const r = await fetchT('cgi-bin/search.cgi?q=' + encodeURIComponent(q), {}, 14000);
     const d = await r.json();
     return (Array.isArray(d) ? d : [])
-      .filter(x => x && x.info_hash && x.info_hash !== '0')
+      // info_hash 全 0 是 apibay 的"无结果"占位记录，必须排除
+      .filter(x => x && x.info_hash && x.info_hash !== '0' && !/^0+$/.test(x.info_hash))
       .map(x => ({hash:x.info_hash, name:x.name, size:+x.size||0,
                   seeders:+x.seeders||0, leechers:+x.leechers||0, src:'tpb'}));
   } catch(e) { return []; }
 }
 async function srcBtsow(q){
   try {
-    const r = await fetchT('cgi-bin/btsow.cgi', {method:'POST', headers:{'Content-Type':'text/plain; charset=utf-8'}, body:q}, 8000);
+    const r = await fetchT('cgi-bin/btsow.cgi', {method:'POST', headers:{'Content-Type':'text/plain; charset=utf-8'}, body:q}, 17000);
     const j = await r.json();
     const d = (j && j.data) || [];
     return (Array.isArray(d) ? d : [])
@@ -116,24 +117,29 @@ async function srcBtsow(q){
   } catch(e) { return []; }
 }
 
+// 页面加载后立即测一次（脚本在 body 末尾，直接调用）
 async function checkStatus(){
   const sb = document.getElementById('statusbar');
   const ts = sb.querySelector('.st-ts');
+  let next = 30000;
   try {
-    const r = await fetchT('cgi-bin/status.cgi', {}, 2500);
+    const r = await fetchT('cgi-bin/status.cgi', {}, 10000);
     const d = await r.json();
     sb.querySelectorAll('.st').forEach(el => {
       const k = el.dataset.k, st = d[k];
-      el.className = 'st ' + (st && st.ok ? 'ok' : 'fail');
-      el.querySelector('.dot').title = (st && st.code) || 'timeout';
+      const code = (st && st.code) || 'timeout';
+      // ok=绿；源站明确返回非 200=红；超时=灰（未知，别误报成故障）
+      el.className = 'st ' + (st && st.ok ? 'ok' : (code === 'timeout' ? '' : 'fail'));
+      el.querySelector('.dot').title = code;
     });
     if (ts) ts.textContent = '';
   } catch(e) {
-    sb.querySelectorAll('.st').forEach(el => { el.className = 'st fail'; });
+    // 拿不到结果只当"未知"（灰点），不标红：红点留给源站明确不可用
+    sb.querySelectorAll('.st').forEach(el => { el.className = 'st'; });
     if (ts) ts.textContent = '状态获取失败';
+    next = 10000;
   }
-  // 30 秒刷新一次
-  setTimeout(checkStatus, 30000);
+  setTimeout(checkStatus, next);
 }
 // 页面加载后立即测一次（脚本在 body 末尾，直接调用）
 async function doSearch(){
@@ -143,10 +149,14 @@ async function doSearch(){
   out.innerHTML = '<div class="hint">搜索中…</div>';
   const [tpb, bts] = await Promise.all([srcTPB(q), srcBtsow(q)]);
   // TPB 有做种数，排前面；BTSOW 中文资源多，按最后更新时间降序排后面
-  tpb.sort((a,b) => b.seeders - a.seeders);
-  bts.sort((a,b) => b.updated - a.updated);
+  tpb.sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
+  bts.sort((a, b) => (+b.updated || 0) - (+a.updated || 0));
   ALL = tpb.concat(bts);
   go.disabled = false;
+  if (!ALL.length) {
+    out.innerHTML = '<div class="err">两个源都没有返回结果<br><span style="color:#999;font-size:12px">可能是网络不通，或源站临时不可用</span></div>';
+    return;
+  }
   render();
 }
 
