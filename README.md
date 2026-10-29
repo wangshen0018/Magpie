@@ -1,12 +1,12 @@
 # Magpie
 
-家里一台屏幕摔坏的旧手机（红米 K40）改的磁力搜索页。手机 root 后跑 busybox httpd + aria2，局域网里用浏览器打开搜资源，点一下就把磁力推给 aria2 下载。屏幕坏了不影响——只用它的 CPU 和网。
+这是用白嫖的token为我一台屏幕损坏的红米 K40做的磁力搜索工具。手机 root 后跑 alist + aria2，在家作为轻nas和软路由使用。为了方便使用主力手机添加Aria离线下载，这个工具设计为聚合能在国内直连的磁力站点，局域网里用浏览器打开搜资源，点一下就把磁力推给 aria2 下载。
 
-自用工具，没有别的目标，也不打算做成什么项目。
+自用工具，未来计划添加更多源网站，同时尝试与v2ray联动，使用时自动挂代理，闲置一段时间后自动关代理。
 
 ## 能干什么
 
-- 同时搜两个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）
+- 目前可以搜索两个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）
 - 页面顶部两个小圆点，显示两个站当前连不连得上，30 秒自动刷新
 - 结果里「下载」直接进 aria2，「复制」拿磁力链接
 - 手机浏览器适配，也能塞进 AriaNg 当浮动按钮
@@ -16,7 +16,7 @@
 - 一台能 root 的安卓手机（root 是为了跑 httpd 和 aria2），或任意 Linux 小机器
 - busybox，要带 httpd 和 CGI
 - aria2 已开启 RPC
-- 设备能访问 `btsow.live` 和 `apibay.org`
+- 设备网络能访问 `btsow.live` 和 `apibay.org`
 
 ## 部署
 
@@ -25,7 +25,7 @@ sh scripts/deploy.sh /data/adb/srv/magnet       # 复制文件到目标目录
 sh scripts/start-service.sh 8080 /data/adb/srv/magnet   # 启动
 ```
 
-手机浏览器打开 `http://手机IP:8080/` 就能用。
+手机浏览器打开 `http://运行的设备IP:8080/` 就能用。
 
 部署细节、aria2 配置、出问题怎么查，见 [docs/deploy.md](docs/deploy.md)。
 
