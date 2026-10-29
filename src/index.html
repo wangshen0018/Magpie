@@ -60,7 +60,7 @@ button:disabled{background:#9bbce0}
 const out = document.getElementById('out');
 const go  = document.getElementById('go');
 const qEl = document.getElementById('q');
-let CUR = 'all', ALL = [];
+let CUR = 'all', ALL = [], REQ = 0;
 
 function fmtSize(n){
   n = +n || 0;
@@ -80,6 +80,8 @@ function fmtTime(ts){
 function esc(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// hash 会被拼进 onclick 参数里，源站返回什么不可控，只接受 32/40 位十六进制
+function isHash(h){ return typeof h === 'string' && /^([0-9a-fA-F]{32}|[0-9a-fA-F]{40})$/.test(h); }
 function setTab(el){
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
   el.classList.add('on');
@@ -95,11 +97,12 @@ async function fetchT(url, opt, ms){
 }
 async function srcTPB(q){
   try {
-    const r = await fetchT('cgi-bin/search.cgi?q=' + encodeURIComponent(q), {}, 14000);
+    // apibay 实测慢（2.7~22.5 秒），后端 curl 给 28 秒，这里留 30 秒余量
+    const r = await fetchT('cgi-bin/search.cgi?q=' + encodeURIComponent(q), {}, 30000);
     const d = await r.json();
     return (Array.isArray(d) ? d : [])
-      // info_hash 全 0 是 apibay 的"无结果"占位记录，必须排除
-      .filter(x => x && x.info_hash && x.info_hash !== '0' && !/^0+$/.test(x.info_hash))
+      // info_hash 全 0 是 apibay 的"无结果"占位记录，必须排除；顺带校验格式
+      .filter(x => x && isHash(x.info_hash) && !/^0+$/.test(x.info_hash))
       .map(x => ({hash:x.info_hash, name:x.name, size:+x.size||0,
                   seeders:+x.seeders||0, leechers:+x.leechers||0, src:'tpb'}));
   } catch(e) { return []; }
@@ -110,7 +113,7 @@ async function srcBtsow(q){
     const j = await r.json();
     const d = (j && j.data) || [];
     return (Array.isArray(d) ? d : [])
-      .filter(x => x && x.hash)
+      .filter(x => x && isHash(x.hash))
       .map(x => ({hash:x.hash, name:String(x.name||'').replace(/<\/?em>/g,''),
                   size:+x.size||0, seeders:null, leechers:null, src:'btsow',
                   updated:(+x.lastUpdateTime||0)*1000}));
@@ -141,17 +144,33 @@ async function checkStatus(){
   }
   setTimeout(checkStatus, next);
 }
-// 页面加载后立即测一次（脚本在 body 末尾，直接调用）
+
+function sortAll(){
+  // TPB 有做种数，排前面；BTSOW 中文资源多，按最后更新时间降序排后面
+  const t = ALL.filter(x => x.src === 'tpb').sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
+  const b = ALL.filter(x => x.src === 'btsow').sort((a, b2) => (+b2.updated || 0) - (+a.updated || 0));
+  ALL = t.concat(b);
+}
+
 async function doSearch(){
   const q = qEl.value.trim();
   if (!q) return;
   go.disabled = true;
-  out.innerHTML = '<div class="hint">搜索中…</div>';
-  const [tpb, bts] = await Promise.all([srcTPB(q), srcBtsow(q)]);
-  // TPB 有做种数，排前面；BTSOW 中文资源多，按最后更新时间降序排后面
-  tpb.sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
-  bts.sort((a, b) => (+b.updated || 0) - (+a.updated || 0));
-  ALL = tpb.concat(bts);
+  ALL = [];
+  const myReq = ++REQ;
+  out.innerHTML = '<div class="hint">搜索中…<br><span style="color:#999;font-size:12px">BTSOW 一般 1 秒内出，TPB 可能要 20 秒以上</span></div>';
+
+  // 渐进渲染：两个源快慢差很多，谁先回来先显示，不等 Promise.all 齐了才出
+  const merge = rows => {
+    if (myReq !== REQ) return;   // 已被更晚发起的搜索取代，丢弃这次结果
+    ALL = ALL.concat(rows);
+    sortAll();
+    render();
+  };
+
+  await Promise.all([srcBtsow(q).then(merge), srcTPB(q).then(merge)]);
+
+  if (myReq !== REQ) return;
   go.disabled = false;
   if (!ALL.length) {
     out.innerHTML = '<div class="err">两个源都没有返回结果<br><span style="color:#999;font-size:12px">可能是网络不通，或源站临时不可用</span></div>';

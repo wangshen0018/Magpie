@@ -23,9 +23,13 @@ if [ -z "$q" ]; then
   exit 0
 fi
 
-OUT=$("$CURL" -s --max-time 12 \
+# apibay 实测很慢：成功时 2.7~22.5 秒都有，K40 到 Cloudflare 还会偶发连不上。
+# 超时给到 28 秒；前端要等得更久一点（见 index.html srcTPB）。
+# 注意：不要带 cat=0。apibay 现在把 cat=0 当成一个真实的分类，实测稳定返回
+# "No results returned"；不带 cat（或 cat=）才是全站搜索。
+OUT=$("$CURL" -s --max-time 28 \
   -A 'Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36' \
-  "https://apibay.org/q.php?q=${q}&cat=0" 2>/dev/null)
+  "https://apibay.org/q.php?q=${q}" 2>/dev/null)
 
 # 拿不到东西或返回的不是完整 JSON 数组，一律给空数组，前端不用处理异常
 # 注意三点：

@@ -1,5 +1,16 @@
 # 更新日志
 
+## 2026-10-29 K40 实机部署验证
+
+在红米 K40（root + busybox 1.36.1 + aria2 RPC）上部署跑通，过程中修掉 4 个问题：
+
+- **`start-service.sh` 启动即失败**：busybox httpd 没有 `-t` 选项，带上会 `invalid option -- t` 直接退出码 1。去掉该参数，`httpd.conf` 与 `docs/deploy.md` 里的相应说明一并订正。
+- **`search.cgi` 恒定搜不到东西**：apibay 已把 `cat=0` 当成一个真实分类，实测 `q=inception&cat=0` 稳定返回 `No results returned`（239 字节占位）；去掉 `cat` 参数才走全站搜索（实测 28582 字节、100 条结果）。
+- **apibay 超时给得太紧**：实测成功请求耗时 2.7~22.5 秒抖动，5 次里 2 次几十秒不返回。后端 `--max-time` 从 12 秒放到 28 秒，前端 `srcTPB` 从 14 秒放到 30 秒。
+- **状态条误报红点**：curl 连不上时 `%{http_code}` 输出 `000`，前端只把 `timeout` 当"未知"，`000` 会落到非 200 分支标红；实测 apibay 慢的时候必现。`status.cgi` 现在把 `000` 归一化成 `timeout` 显示灰点。
+- **前端两处加固**：`doSearch` 改为渐进渲染，两个源谁先回来先显示（btsow 实测 1.3 秒、apibay 常需 10 秒以上，原 `Promise.all` 齐了才出结果，白等）；源站返回的 hash 一律先校验 32/40 位十六进制再插入 `onclick`，避免畸形值拼出脚本。
+- **`deploy.sh` 同步维护根目录 `httpd.conf`**：开机自启读 `$TARGET/httpd.conf`，`start-service.sh` 读 `$TARGET/www/httpd.conf`，原来只写后者，改一份容易两边不一致。
+
 ## 2026-10-29 整理
 
 修掉的问题（全部在本机模拟部署后实测过）：
@@ -8,7 +19,7 @@
 
 - `deploy.sh` 没有把 `httpd.conf` 复制到部署目录，照着文档启动会读不到配置；现在一起复制，并在部署后自检文件是否齐全，缺文件直接报错
 - `deploy.sh` 原来用相对路径 `cp src/...`，只能在仓库根目录执行；改用脚本自身位置推算仓库路径
-- `httpd.conf` 里混了 `Timeout` / `MaxClients` / `DirectoryIndex` 等 Apache 写法，busybox httpd 不认；只保留 `*.cgi` 映射，超时改由启动参数 `-t 60` 给
+- `httpd.conf` 里混了 `Timeout` / `MaxClients` / `DirectoryIndex` 等 Apache 写法，busybox httpd 不认；只保留 `*.cgi` 映射
 - `start-service.sh` 每次启动都重写一遍配置（会覆盖部署好的文件），且 busybox 路径写死 `/data/adb/magisk/busybox`；改为自动查找 busybox、校验配置存在后直接启动
 - 删除 `test-deploy.sh`（其中硬编码了 `/var/minis/workspace/...` 绝对路径，检查逻辑已并入 `deploy.sh`）
 

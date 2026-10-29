@@ -46,7 +46,9 @@ echo "端口:    $PORT"
 echo "目录:    $WWW"
 echo "配置:    $CONF"
 
-"$BB" httpd -p "$PORT" -h "$WWW" -c "$CONF" -t 60
+# 注意：busybox httpd 没有 -t / 超时选项（v1.36.1 只认 -i -f -v -p -u -r -h -c -e -d），
+# 写 -t 会直接 "invalid option" 启动失败。CGI 超时由脚本内部 curl --max-time 控制。
+"$BB" httpd -p "$PORT" -h "$WWW" -c "$CONF"
 RC=$?
 
 if [ "$RC" -ne 0 ]; then

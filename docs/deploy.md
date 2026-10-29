@@ -53,8 +53,10 @@ sh scripts/start-service.sh 8080 /data/adb/srv/magnet
 手动启动等价写法：
 
 ```sh
-busybox httpd -p 8080 -h /data/adb/srv/magnet/www -c /data/adb/srv/magnet/www/httpd.conf -t 60
+busybox httpd -p 8080 -h /data/adb/srv/magnet/www -c /data/adb/srv/magnet/www/httpd.conf
 ```
+
+> 不要加 `-t 60`。busybox httpd 没有超时选项，带了会 `invalid option -- t` 直接启动失败。
 
 停掉：
 
@@ -130,6 +132,31 @@ curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"me
 ### 搜中文没结果
 
 btsow 支持中文，apibay 中文基本搜不出来，属于正常现象。
+
+### TPB 源特别慢，状态条老变灰
+
+K40 实测（2026-10-29）：apibay 走 Cloudflare，成功返回也要 **2.7~22.5 秒**，而且 5 次里有 2 次几十秒不响应；btsow 稳定 1~1.3 秒。所以：
+
+- 后端 `search.cgi` 超时给到 28 秒，前端 `srcTPB` 给 30 秒，慢是正常的，不要往回收。
+- 页面已改成渐进渲染：BTSOW 结果先出来，TPB 回来再补进去，不用干等。
+- 状态条 TPB 圆点变灰（`timeout`）不代表坏了，是这个源本来就飘。只有明确返回非 200 才标红。
+
+真嫌慢可以把 TPB 圆点当参考，或者直接只用 BTSOW 标签页。这是出口网络问题，本项目不做代理集成。
+
+### apibay 搜不到任何东西（连英文都是空）
+
+先确认 `search.cgi` 里**没有** `cat=0`。apibay 现在把 `cat=0` 当成一个真实分类，带上它实测稳定返回一条 `No results returned` 占位（239 字节），前端过滤后就是空数组——看起来像"网络不通"，其实是参数问题：
+
+```sh
+# 有结果（不带 cat）
+curl -4 -s "https://apibay.org/q.php?q=inception" | head -c 200
+# 稳定空结果（带 cat=0）
+curl -4 -s "https://apibay.org/q.php?q=inception&cat=0" | head -c 200
+```
+
+### 启动报 `busybox: invalid option -- t`
+
+busybox httpd 没有超时选项（v1.36.1 只认 `-i -f -v -p -u -r -h -c -e -d`）。启动命令里不要写 `-t 60`，`start-service.sh` 已去掉。CGI 耗时由脚本内部 `curl --max-time` 控制。
 
 ### 源站打不开（DNS 污染 / 反爬）
 

@@ -20,6 +20,10 @@ cp "$SRC/src/index.html" "$WWW/index.html"
 cp "$SRC"/src/cgi-bin/*.cgi "$WWW/cgi-bin/"
 cp "$SRC/static/httpd.conf" "$WWW/httpd.conf"
 
+# 开机自启（/data/adb/service.d/srv.sh）读的是 TARGET 根目录那份 httpd.conf，
+# 而 start-service.sh 读的是 www 下那份。两份都写，避免以后只改一边导致行为不一致。
+cp "$SRC/static/httpd.conf" "$TARGET/httpd.conf" 2>/dev/null || true
+
 chmod 755 "$WWW/cgi-bin/"*.cgi
 chmod 644 "$WWW/index.html" "$WWW/httpd.conf"
 

@@ -60,5 +60,10 @@ tpb_ok='false'
 [ "$btsow_code" = "200" ] && btsow_ok='true'
 [ "$tpb_code" = "200" ] && tpb_ok='true'
 
+# curl 连不上/超时都会输出 "000"，统一成 timeout，前端才能当成"未知"显示灰点。
+# 否则 000 会走到非 200 分支被标成红点，实测 apibay 慢的时候必现误报。
+[ "$btsow_code" = "000" ] && btsow_code=''
+[ "$tpb_code" = "000" ] && tpb_code=''
+
 echo "{\"btsow\":{\"ok\":$btsow_ok,\"code\":\"${btsow_code:-timeout}\"},\"tpb\":{\"ok\":$tpb_ok,\"code\":\"${tpb_code:-timeout}\"},\"t\":$(date +%s)}"
 exit 0
