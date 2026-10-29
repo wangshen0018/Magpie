@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>磁力搜索</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;padding:12px;background:#f5f6f8;color:#222}
+h2{margin:0 0 10px;font-size:17px}
+.bar{display:flex;gap:8px;margin-bottom:10px}
+input{flex:1;padding:11px 12px;border:1px solid #ccc;border-radius:8px;font-size:15px;outline:none}
+input:focus{border-color:#007bff}
+button{padding:11px 16px;border:none;border-radius:8px;background:#007bff;color:#fff;font-size:15px;cursor:pointer}
+button:active{background:#0056b3}
+button:disabled{background:#9bbce0}
+.tabs{display:flex;gap:6px;margin-bottom:10px;font-size:13px}
+.tab{padding:5px 12px;border-radius:14px;background:#e6eaef;color:#444;cursor:pointer;user-select:none}
+.tab.on{background:#007bff;color:#fff}
+.item{background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.name{font-size:14px;line-height:1.35;word-break:break-all;margin-bottom:8px}
+.meta{font-size:12px;color:#666;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seed{color:#25a244;font-weight:600}
+.time{color:#8a6d3b}
+.leech{color:#c1121f}
+.badge{font-size:10px;padding:2px 6px;border-radius:4px;background:#eef3fb;color:#0b5ed7}
+.badge.b{background:#fff1e6;color:#c05621}
+.ops{display:flex;gap:8px;margin-left:auto}
+.ops button{padding:6px 12px;font-size:13px;background:#eef3fb;color:#0b5ed7;border-radius:6px}
+.ops button.pri{background:#007bff;color:#fff}
+.hint{text-align:center;color:#999;font-size:13px;padding:24px 0}
+.err{color:#c1121f;text-align:center;padding:16px}
+.statusbar{display:flex;align-items:center;gap:14px;margin:0 0 10px;font-size:12px;color:#666}
+.st{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.st .dot{width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block}
+.st.ok .dot{background:#25a244}
+.st.fail .dot{background:#c1121f}
+.st.on{font-weight:700}
+.st-ts{margin-left:auto;color:#999;font-size:11px}
+</style>
+</head>
+<body>
+<h2>🔍 磁力搜索</h2>
+<div class="bar">
+  <input id="q" placeholder="片名 / 关键词（支持中文）" autocomplete="off">
+  <button id="go" onclick="doSearch()">搜索</button>
+</div>
+<div class="statusbar" id="statusbar">
+  <span class="st" data-k="btsow"><i class="dot"></i> BTSOW</span>
+  <span class="st" data-k="tpb"><i class="dot"></i> TPB</span>
+  <span class="st-ts" id="st-ts"></span>
+</div>
+<div class="tabs">
+  <div class="tab on" data-src="all" onclick="setTab(this)">全部</div>
+  <div class="tab" data-src="btsow" onclick="setTab(this)">BTSOW</div>
+  <div class="tab" data-src="tpb" onclick="setTab(this)">TPB</div>
+</div>
+<div id="out"><div class="hint">输入关键词开始搜索</div></div>
+<script>
+const out = document.getElementById('out');
+const go  = document.getElementById('go');
+const qEl = document.getElementById('q');
+let CUR = 'all', ALL = [];
+
+function fmtSize(n){
+  n = +n || 0;
+  const u = ['B','KB','MB','GB','TB']; let i=0;
+  while (n >= 1024 && i < 4) { n /= 1024; i++; }
+  return n.toFixed(n < 10 && i > 1 ? 1 : 0) + ' ' + u[i];
+}
+function fmtTime(ts){
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return '刚刚';
+  if (s < 3600) return Math.floor(s/60) + ' 分钟前';
+  if (s < 86400) return Math.floor(s/3600) + ' 小时前';
+  if (s < 86400*30) return Math.floor(s/86400) + ' 天前';
+  if (s < 86400*365) return Math.floor(s/(86400*30)) + ' 个月前';
+  return Math.floor(s/(86400*365)) + ' 年前';
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function setTab(el){
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  CUR = el.dataset.src;
+  render();
+}
+
+async function fetchT(url, opt, ms){
+  const ctl = new AbortController();
+  const tm = setTimeout(()=>ctl.abort(), ms);
+  try { return await fetch(url, {...opt, signal: ctl.signal}); }
+  finally { clearTimeout(tm); }
+}
+async function srcTPB(q){
+  try {
+    const r = await fetchT('cgi-bin/search.cgi?q=' + encodeURIComponent(q), {}, 6000);
+    const d = await r.json();
+    return (Array.isArray(d) ? d : [])
+      .filter(x => x && x.info_hash && x.info_hash !== '0')
+      .map(x => ({hash:x.info_hash, name:x.name, size:+x.size||0,
+                  seeders:+x.seeders||0, leechers:+x.leechers||0, src:'tpb'}));
+  } catch(e) { return []; }
+}
+async function srcBtsow(q){
+  try {
+    const r = await fetchT('cgi-bin/btsow.cgi', {method:'POST', headers:{'Content-Type':'text/plain; charset=utf-8'}, body:q}, 8000);
+    const j = await r.json();
+    const d = (j && j.data) || [];
+    return (Array.isArray(d) ? d : [])
+      .filter(x => x && x.hash)
+      .map(x => ({hash:x.hash, name:String(x.name||'').replace(/<\/?em>/g,''),
+                  size:+x.size||0, seeders:null, leechers:null, src:'btsow',
+                  updated:(+x.lastUpdateTime||0)*1000}));
+  } catch(e) { return []; }
+}
+
+async function checkStatus(){
+  const sb = document.getElementById('statusbar');
+  const ts = sb.querySelector('.st-ts');
+  try {
+    const r = await fetchT('cgi-bin/status.cgi', {}, 2500);
+    const d = await r.json();
+    sb.querySelectorAll('.st').forEach(el => {
+      const k = el.dataset.k, st = d[k];
+      el.className = 'st ' + (st && st.ok ? 'ok' : 'fail');
+      el.querySelector('.dot').title = (st && st.code) || 'timeout';
+    });
+    if (ts) ts.textContent = '';
+  } catch(e) {
+    sb.querySelectorAll('.st').forEach(el => { el.className = 'st fail'; });
+    if (ts) ts.textContent = '状态获取失败';
+  }
+  // 30 秒刷新一次
+  setTimeout(checkStatus, 30000);
+}
+// 页面加载后立即测一次（脚本在 body 末尾，直接调用）
+async function doSearch(){
+  const q = qEl.value.trim();
+  if (!q) return;
+  go.disabled = true;
+  out.innerHTML = '<div class="hint">搜索中…</div>';
+  const [tpb, bts] = await Promise.all([srcTPB(q), srcBtsow(q)]);
+  // TPB 有做种数，排前面；BTSOW 中文资源多，按最后更新时间降序排后面
+  tpb.sort((a,b) => b.seeders - a.seeders);
+  bts.sort((a,b) => b.updated - a.updated);
+  ALL = tpb.concat(bts);
+  go.disabled = false;
+  render();
+}
+
+function render(){
+  let d = CUR === 'all' ? ALL : ALL.filter(x => x.src === CUR);
+  if (!d.length) { out.innerHTML = '<div class="hint">没有结果</div>'; return; }
+  out.innerHTML = d.map(x => `
+    <div class="item">
+      <div class="name">${esc(x.name)}</div>
+      <div class="meta">
+        <span class="badge ${x.src==='btsow'?'b':''}">${x.src==='btsow'?'BTSOW':'TPB'}</span>
+        <span>${fmtSize(x.size)}</span>
+        ${x.seeders===null ? (x.updated?`<span class="time">🕒 ${fmtTime(x.updated)}</span>`:'') : `<span class="seed">▲ ${x.seeders}</span><span class="leech">▼ ${x.leechers}</span>`}
+        <span class="ops">
+          <button onclick="copyMagnet('${x.hash}')">复制</button>
+          <button class="pri" onclick="addUri('${x.hash}', this)">下载</button>
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+async function addUri(hash, btn){
+  btn.disabled = true; btn.textContent = '加入中';
+  try {
+    const r = await fetch('cgi-bin/add.cgi?h=' + encodeURIComponent(hash));
+    const d = await r.json();
+    if (d && d.result) { btn.textContent = '已加入 ✓'; btn.style.background = '#25a244'; btn.style.color='#fff'; }
+    else { btn.textContent = '失败'; btn.disabled = false; alert('加入失败：' + JSON.stringify(d)); }
+  } catch (e) {
+    btn.textContent = '失败'; btn.disabled = false;
+  }
+}
+function copyMagnet(hash){
+  const m = 'magnet:?xt=urn:btih:' + hash;
+  if (navigator.clipboard) navigator.clipboard.writeText(m).then(()=>alert('磁力链接已复制'),()=>prompt('复制磁力链接：', m));
+  else prompt('复制磁力链接：', m);
+}
+qEl.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+checkStatus();
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+# 临时文件
+*.tmp
+*.log
+*.bak
+*.swp
+*.swo
+*.cache
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 部署目录（包含敏感信息）
+/data/adb/srv/magnet/
+/sdcard/Minis/magnet-*
+/tmp/magnet-*
+
+# 测试文件
+/test/
+/tmp/
+*.test.*
+
+# IDE 文件
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# 备份文件
+*.bak-*
+*.orig
+*.rej
+
+# Node.js 相关（如果未来需要）
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+
+# 系统生成的文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
