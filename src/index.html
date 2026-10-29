@@ -137,7 +137,10 @@ async function srcYTS(q){
       const label = m.title_long || ((m.title || '') + (m.year ? ' (' + m.year + ')' : ''));
       for (const t of m.torrents) {
         if (!t || !isHash(t.hash)) continue;
-        rows.push({hash:t.hash, name:label + ' [' + (t.quality || '?') + ']',
+        // 同一电影同一画质可能有多个压制版本（实测 The Matrix Resurrections 有两条 720p），
+        // 只标画质会在页面上出现两条文字完全一样的条目，所以带上 type 区分。
+        const tag = [t.quality, t.type].filter(Boolean).join(' ');
+        rows.push({hash:t.hash, name:label + (tag ? ' [' + tag + ']' : ''),
                    size:+t.size_bytes||0, seeders:+t.seeds||0, leechers:+t.peers||0, src:'yts',
                    updated:(+t.date_uploaded_unix||0)*1000});
       }
