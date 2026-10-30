@@ -1,5 +1,24 @@
 # 更新日志
 
+## 2026-10-31 新增第五源：TorrentKitty（需代理）
+
+与 Nyaa 同属"只在代理下可用"的源，实测比初测快很多（此前测 8.9 秒，加 `--compressed` 后稳定 **2~3 秒**）。
+
+- **TorrentKitty（`torrentkitty.tv`）**：综合站，**支持中文关键词**（搜「进击的巨人」20 条、标题完整）。代理下 20 条/2.6~3.3 秒。
+  - **不提供 seeders/leechers**，页面只有 名字 / size / 日期。JSON 里这两字段为 `null`，前端改显示上传日期（渲染逻辑本来就有 `seeders===null` 分支，BTSOW 时期留下的）。
+  - size 单位小写 `kb/mb/gb`，按 1024 进制。注意页面里有些种子 size 离谱（ISO 仅 200KB），那是站点死种，不是解析错误。
+  - HTML 比 Nyaa 更规整：一条一行 `<tr><td class="name">标题</td><td class="size">223.04 kb</td><td class="date">...</td><td class="action"><a href="magnet:?xt=urn:btih:HASH&...">`
+- `status.cgi` 扩到五源；TK 与 Nyaa 一样只探代理，代理没开时如实标灰。
+- `deploy.sh` 自检清单加 `tkitty.cgi`；README / deploy.md 同步五源。
+
+实测（K40，代理开）：
+
+```
+status: btsow/tpb/yts/nyaa/tkitty 全部 ok:true
+tkitty 中文「进击的巨人」: 200 / 3.3s / 20 条
+代理关: tkitty 状态 timeout（灰）、搜索返回空不报错
+```
+
 ## 2026-10-31 新增第四源：Nyaa（需代理）
 
 有了可用代理之后重测此前全部连不通的站，60+ 个里挑出 4 个代理下可用的，最终接入 **Nyaa**。

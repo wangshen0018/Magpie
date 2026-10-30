@@ -29,6 +29,7 @@ button:disabled{background:#9bbce0}
 .badge.b{background:#fff1e6;color:#c05621}
 .badge.y{background:#e8f6ee;color:#1a7f4b}
 .badge.n{background:#f3e8fd;color:#6b21a8}
+.badge.t{background:#fde8f0;color:#9d174d}
 .ops{display:flex;gap:8px;margin-left:auto}
 .ops button{padding:6px 12px;font-size:13px;background:#eef3fb;color:#0b5ed7;border-radius:6px}
 .ops button.pri{background:#007bff;color:#fff}
@@ -87,6 +88,7 @@ button:disabled{background:#9bbce0}
   <span class="st" data-k="tpb"><i class="dot"></i> TPB</span>
   <span class="st" data-k="yts"><i class="dot"></i> YTS</span>
   <span class="st" data-k="nyaa"><i class="dot"></i> NYAA</span>
+  <span class="st" data-k="tkitty"><i class="dot"></i> TK</span>
   <button class="px" id="px" onclick="toggleProxy()">代理:关</button>
   <span class="st-ts" id="st-ts"></span>
 </div>
@@ -96,6 +98,7 @@ button:disabled{background:#9bbce0}
   <div class="tab" data-src="tpb" onclick="setTab(this)">TPB</div>
   <div class="tab" data-src="yts" onclick="setTab(this)">YTS</div>
   <div class="tab" data-src="nyaa" onclick="setTab(this)">NYAA</div>
+  <div class="tab" data-src="tkitty" onclick="setTab(this)">TK</div>
 </div>
 <div id="out"><div class="hint">输入关键词开始搜索</div></div>
 
@@ -259,6 +262,23 @@ async function srcNyaa(q){
                   seeders:+x.seeders||0, leechers:+x.leechers||0, src:'nyaa'}));
   } catch(e) { return []; }
 }
+// TorrentKitty：与 Nyaa 同属"只在代理下可用"的源，也支持中文。
+// 但它**不提供 seeders/leechers**（页面只有名字/size/日期），
+// 所以这两个字段给 null，页面会改显示上传日期而不是做种数。
+async function srcTKitty(q){
+  try {
+    // 后端最坏 24 秒（代理 16 + 直连 8），给 26 秒
+    const r = await fetchT('cgi-bin/tkitty.cgi?q=' + encodeURIComponent(q), {}, 26000);
+    const j = await r.json();
+    const d = (j && Array.isArray(j.data)) ? j.data : [];
+    return d
+      .filter(x => x && isHash(x.hash))
+      .map(x => ({hash:x.hash, name:x.name, size:+x.size||0,
+                  seeders:x.seeders===null?null:(+x.seeders||0),
+                  leechers:x.leechers===null?null:(+x.leechers||0), src:'tkitty',
+                  updated:x.date?Date.parse(x.date+'T00:00:00')||0:0}));
+  } catch(e) { return []; }
+}
 // 页面加载后立即测一次，之后按 next 间隔循环
 async function checkStatus(){
   const sb = document.getElementById('statusbar');
@@ -366,7 +386,7 @@ async function doSearch(){
     if (ALL.length) go.disabled = false;
   };
 
-  await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcNyaa(q).then(merge), srcTPB(q).then(merge)]);
+  await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcNyaa(q).then(merge), srcTKitty(q).then(merge), srcTPB(q).then(merge)]);
 
   if (myReq !== REQ) return;
   go.disabled = false;
@@ -384,7 +404,7 @@ function render(){
     <div class="item">
       <div class="name">${esc(x.name)}</div>
       <div class="meta">
-        <span class="badge ${x.src==='btsow'?'b':(x.src==='yts'?'y':(x.src==='nyaa'?'n':''))}">${x.src==='btsow'?'BTSOW':(x.src==='yts'?'YTS':(x.src==='nyaa'?'NYAA':'TPB'))}</span>
+        <span class="badge ${x.src==='btsow'?'b':(x.src==='yts'?'y':(x.src==='nyaa'?'n':(x.src==='tkitty'?'t':'')))}">${x.src==='btsow'?'BTSOW':(x.src==='yts'?'YTS':(x.src==='nyaa'?'NYAA':(x.src==='tkitty'?'TK':'TPB')))}</span>
         <span>${fmtSize(x.size)}</span>
         ${x.seeders===null ? (x.updated?`<span class="time">🕒 ${fmtTime(x.updated)}</span>`:'') : `<span class="seed">▲ ${x.seeders}</span><span class="leech">▼ ${x.leechers}</span>`}
         <span class="ops">
