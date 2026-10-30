@@ -1,12 +1,14 @@
 #!/system/bin/sh
-# Magpie nightly node updater (fires inside 03:00-03:59, once per day)
+# Magpie daily node updater. The scheduler wakes hourly; this script self-gates:
+# no-op before 03:00; from 03:00 on it retries every hour until today's
+# subscription file shows up (site publish time is unknown), then runs once.
 #
 # Flow: fetch daily sing-box subscription -> extract ss nodes -> TCP-probe ->
 #       build config (top 8 into urltest) -> validate with a REAL request
 #       through the new nodes (separate port, live proxy untouched) -> swap.
 # Every failure path keeps the current config and current state.
 #
-# Manual:  sh node-update.sh --force     (ignores window + daily flag)
+# Manual:  sh node-update.sh --force  (ignores the hour gate + daily flag)
 # Why not crond: only crond here writes tabs under another module's dir
 # (GGAT_10007) which a module update may wipe. Loop = battguard pattern.
 
