@@ -15,6 +15,11 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
+# 本地代理感知（详见 search.cgi 注释：使用处 $PROXY_OPT 不能加引号）
+for _l in /data/adb/srv/magnet/proxy-lib.sh /data/adb/magnet/proxy-lib.sh; do
+  [ -f "$_l" ] && { . "$_l"; break; }
+done
+
 q="${QUERY_STRING}"
 case "$q" in
   q=*) q="${q#q=}" ;;
@@ -49,6 +54,7 @@ OUT=""
 # 单个 base 给 9 秒，两个都试最多约 18 秒；前端 srcYTS 要等得更久
 for base in yts.gg movies-api.accel.li; do
   R=$("$CURL" -sL --max-time 9 \
+    $PROXY_OPT \
     -A "$UA" \
     "https://${base}/api/v2/list_movies.json?query_term=${q}&limit=20" 2>/dev/null)
   if good_json "$R"; then

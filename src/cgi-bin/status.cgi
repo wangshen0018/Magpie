@@ -14,6 +14,12 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
+# 本地代理感知：探测必须和实际搜索走同一条路径，否则会出现
+# "状态点是红的、但开着代理其实搜得到" 的误导（详见 search.cgi 注释）
+for _l in /data/adb/srv/magnet/proxy-lib.sh /data/adb/magnet/proxy-lib.sh; do
+  [ -f "$_l" ] && { . "$_l"; break; }
+done
+
 UA='Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36'
 
 BTSOW_URL='https://btsow.live/bts/data/api/search'
@@ -36,16 +42,16 @@ if [ -n "$TMP" ]; then
   F2="$TMP/.magpie_st_$$_2"
   F3="$TMP/.magpie_st_$$_3"
 
-  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" -X POST \
+  "$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" -X POST \
     -H 'Content-Type: application/json' -H 'Referer: https://btsow.live/' \
     -d '[{"search":"inception"},1,1]' "$BTSOW_URL" > "$F1" 2>/dev/null &
   P1=$!
 
-  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+  "$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
     "$TPB_URL" > "$F2" 2>/dev/null &
   P2=$!
 
-  "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+  "$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
     "$YTS_URL" > "$F3" 2>/dev/null &
   P3=$!
 
@@ -59,12 +65,12 @@ if [ -n "$TMP" ]; then
   rm -f "$F1" "$F2" "$F3"
 else
   # 没有可写临时目录时退回串行，超时收短以控制总时长
-  btsow_code=$("$CURL" -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" -X POST \
+  btsow_code=$("$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" -X POST \
     -H 'Content-Type: application/json' -H 'Referer: https://btsow.live/' \
     -d '[{"search":"inception"},1,1]' "$BTSOW_URL" 2>/dev/null)
-  tpb_code=$("$CURL" -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
+  tpb_code=$("$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
     "$TPB_URL" 2>/dev/null)
-  yts_code=$("$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
+  yts_code=$("$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
     "$YTS_URL" 2>/dev/null)
 fi
 

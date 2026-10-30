@@ -82,7 +82,48 @@ AriaNg 的 `index.html` 里 `</body>` 前加一行：
 <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8080/','_blank')" style="position:fixed;right:20px;bottom:20px;background:#007bff;color:#fff;padding:8px 12px;border-radius:4px;text-decoration:none;z-index:9999">搜索</a>
 ```
 
-## 五、出问题了
+## 五、代理开关（可选，救被墙的源站）
+
+apibay 从国内家庭网络经常直连不通（实测 20~35 秒超时）。页面右上角有个"代理"开关，点一下在 K40 后台拉起 sing-box，搜索请求自动走它；再点关掉，闲置 600 秒也会自动关。
+
+### 前置：装 sing-box
+
+```sh
+# 下载 android/arm64 构建（Linux glibc 构建在安卓上跑不了）
+# 官方校验值务必核对，第三方镜像下载的二进制不可盲信
+sh scripts/proxy-setup.sh    # 建配置目录，默认生成 direct 透传
+```
+
+`proxy-setup.sh` 会把 sing-box 二进制放到 `/data/adb/srv/bin/sing-box`（需先自行下载放进去），配置放 `/data/adb/srv/magpie-proxy/`（权限 700，**在 web 根之外**，否则 config.json 里的节点密码会被 httpd 当静态文件下载走）。
+
+### 接真实节点
+
+默认配置是 direct 透传——**开关是空转的**：只多绕一跳、不解决封锁，实测 YTS 直连 1~2 秒、经 direct 透传反而 12.8 秒。所以页面上开着但没节点时会显示"代理:开(透传)"提醒你。
+
+要真正翻墙，把 `/data/adb/srv/magpie-proxy/config.json` 换成含真实节点的配置（保留 `inbounds` 里那个 `127.0.0.1:10808` 的 mixed 端口，`outbounds` 第一个填节点），然后：
+
+```sh
+/data/adb/srv/bin/sing-box check -c /data/adb/srv/magpie-proxy/config.json
+```
+
+check 通过再在页面点开关。check 不通过点开关会直接报 `config invalid`，不会拉起半死进程。
+
+sing-box 合法出站类型名：`shadowsocks` / `vmess` / `trojan` / `vless` / `hysteria2` / `wireguard` / `tuic` / `urltest`（多节点自动选优）。注意 `proxy` 不是合法类型名，写了 check 会报 unknown outbound type。
+
+### 只有这些源走代理
+
+- **走**：`search.cgi`（apibay）、`yts.cgi`（YTS）、`status.cgi`（探测要跟着走，否则状态点会误报红）
+- **不走**：`btsow.cgi`（实测国内直连 1~2 秒且从未失败，绕境外只会更慢）、`add.cgi`（连的是本机 aria2 RPC，走代理直接坏）
+
+### 闲置自动关
+
+`/data/adb/srv/magpie-proxy/idle` 里的数字是秒数（默认 600）。搜索请求会 touch `lastuse` 续命，停止搜索 600 秒后 watchdog 关掉 sing-box。改这个文件即可调整。
+
+### 免费节点订阅能不能用
+
+实测过 v2rayfree.org 每日更新（2026-10-29 那批，445 个节点）：**能用，但可用率很低，且高度集中在个别簇**。复现验证：`shadowsocks aes-256-gcm` 那几个（同密码簇，202.50.253.x:19999）确实把 apibay 从"直连 000 超时"救成"经代理 200 + 100 条 hash"。但绝大多数节点是死的。结论：适合当备胎应急，不适合当稳定依赖，每天换订阅、可用节点说没就没。
+
+## 六、出问题了
 
 ### 页面打不开
 
@@ -145,7 +186,7 @@ K40 实测（2026-10-29）：apibay 走 Cloudflare，成功返回也要 **2.7~22
 - 页面已改成渐进渲染：BTSOW 结果先出来，TPB 回来再补进去，不用干等。
 - 状态条 TPB 圆点变灰（`timeout`）不代表坏了，是这个源本来就飘。只有明确返回非 200 才标红。
 
-真嫌慢可以把 TPB 圆点当参考，或者直接只用 BTSOW 标签页。这是出口网络问题，本项目不做代理集成。
+真嫌慢可以打开第五节的代理开关（走 sing-box），或者直接只用 BTSOW 标签页。
 
 ### apibay 搜不到任何东西（连英文都是空）
 
@@ -164,9 +205,9 @@ busybox httpd 没有超时选项（v1.36.1 只认 `-i -f -v -p -u -r -h -c -e -d
 
 ### 源站打不开（DNS 污染 / 反爬）
 
-手机端只能靠换网络环境解决（换 DNS、走代理）。本项目不做代理集成。
+手机端可换网络环境解决（换 DNS），或用第五节的代理开关走 sing-box。apibay 这类被墙的站经代理已实测可通。
 
-## 六、注意
+## 七、注意
 
 - 这个页面**没有任何登录和权限校验**，同一局域网的人都能打开、都能往你的 aria2 里塞任务。别把端口映射到公网。
 - 只在自己家里用。

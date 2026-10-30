@@ -41,6 +41,10 @@ button:disabled{background:#9bbce0}
 .st.on{font-weight:700}
 .st-ts{margin-left:auto;color:#999;font-size:11px}
 
+/* 代理开关 */
+.px{padding:3px 9px;border-radius:12px;background:#e6eaef;color:#555;font-size:12px;cursor:pointer;user-select:none;border:none}
+.px.on{background:#1a7f4b;color:#fff}
+
 /* 搜索历史下拉 */
 .hist{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #dbe6f5;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.1);z-index:30;max-height:260px;overflow:auto;display:none}
 .hist .hh{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:12px;color:#8a9bb0;background:#f8fafd;border-bottom:1px solid #eef3fa;position:sticky;top:0}
@@ -81,6 +85,7 @@ button:disabled{background:#9bbce0}
   <span class="st" data-k="btsow"><i class="dot"></i> BTSOW</span>
   <span class="st" data-k="tpb"><i class="dot"></i> TPB</span>
   <span class="st" data-k="yts"><i class="dot"></i> YTS</span>
+  <button class="px" id="px" onclick="toggleProxy()">代理:关</button>
   <span class="st-ts" id="st-ts"></span>
 </div>
 <div class="tabs">
@@ -257,6 +262,50 @@ async function checkStatus(){
     next = 10000;
   }
   setTimeout(checkStatus, next);
+}
+
+// ---- 代理开关 ----
+// 只发开关动作，节点信息全在服务端，页面拿不到也不需要拿到。
+// 状态一律以重新查询为准，不拿 toggleProxy 的返回值猜"成功"，
+// 因为 do_start 里可能启动失败但 HTTP 仍是 200。
+let PX = null, PXBUSY = false;
+function renderProxy(){
+  const b = document.getElementById('px');
+  if (!b) return;
+  if (!PX)        { b.textContent = '代理:未知'; b.className = 'px'; b.title='状态获取失败'; return; }
+  const on = !!PX.on;
+  b.className = 'px' + (on ? ' on' : '');
+  b.textContent = '代理:' + (on ? '开' : '关');
+  // outbound=direct 时开关是空转的：direct 只是透传，不解决封锁，
+  // 而且实测经 direct 代理比直连慢一个数量级（YTS 1~2s vs 12.8s）。必须让用户看见。
+  if (on && PX.outbound !== 'custom') {
+    b.textContent = '代理:开(透传)';
+    b.title = '当前配置没有真实节点，只是透传，不会解开被墙的站，反而更慢';
+  } else {
+    b.title = PX.outbound === 'custom'
+      ? ('已接节点，闲置 ' + PX.idle + ' 秒自动关；' + PX.addr)
+      : ('未接节点，点了只是空转；闲置 ' + PX.idle + ' 秒自动关');
+  }
+  if (PXBUSY) { b.disabled = true; b.textContent = '代理:处理中'; }
+}
+async function checkProxy(){
+  try {
+    const r = await fetchT('cgi-bin/proxy.cgi', {}, 8000);
+    PX = await r.json();
+    if (PX && PX.error) PX = null;
+  } catch(e) { PX = null; }
+  renderProxy();
+}
+async function toggleProxy(){
+  if (PXBUSY) return;
+  if (PX && PX.error) return;
+  const target = (PX && PX.on) ? 'off' : 'on';
+  PXBUSY = true; renderProxy();
+  try {
+    await fetchT('cgi-bin/proxy.cgi?a=' + target, {}, 25000);
+  } catch(e) { /* 超时也要重新查，别信本地假设 */ }
+  PXBUSY = false;
+  await checkProxy();
 }
 
 function sortAll(){
@@ -459,6 +508,9 @@ try {
 } catch(e) {}
 checkStatus();
 pollTasks();
+// 代理状态只在加载时查一次：它是本机 CGI（实测 0.14 秒），不像源站会漂移，
+// 不需要 30 秒轮询；开关后 toggleProxy 内部会主动重查。
+checkProxy();
 </script>
 </body>
 </html>

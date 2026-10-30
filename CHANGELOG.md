@@ -57,6 +57,27 @@
 
 **apibay 的可用性问题不是代码能解决的**，它现在经常整分钟不返回。TPB 这一源实际上处于"偶尔能用"的状态。
 
+## 2026-10-30 代理开关（sing-box）
+
+页面右上角加"代理"开关：点一下 K40 后台拉起 sing-box，搜索请求自动走它；再点关掉，闲置 600 秒看门狗自动关。动机是 apibay 从国内家庭网络经常直连不通。
+
+- 新增 `src/cgi-bin/proxy.cgi`：开关只接受 `status|on|off|touch` 四个固定动作，其余拒绝；状态汇报前先和真实进程核对（state 说 on 但进程没了就就地校正）。
+- 新增 `scripts/proxy-setup.sh`（建配置目录）、`scripts/proxy-lib.sh`（各搜索 CGI source 它，决定是否注入 `--proxy`）、`scripts/watchdog.sh`（闲置自动关）。
+- 配置目录 `/data/adb/srv/magpie-proxy/`（700）在 **web 根之外**；实测三个探测 URL 全 404，`config.json` 里的节点密码不会被 httpd 当静态文件下载走。
+- 只有 apibay / YTS / status 走代理。**btsow 故意不接**（直连 1~2 秒且从未失败，绕境外只会更慢）；**add.cgi 不接**（连本机 aria2 RPC，走代理直接坏）。
+
+K40 实测踩到的坑（都修了）：
+
+- **单次请求 15 秒**：早先版本探测进程存活靠遍历 `/proc/*/cmdline`，这台设备 920 个进程、每个 fork 一次 `tr`，一次 status 就 fork 上千次，前端点开关根本没反应。改成 `sb.pid` + 读 `/proc/<pid>/comm`（shell 内建，零 fork）后降到 **0.14 秒**，之前的"偶发空响应"也随之消失（真凶就是慢）。
+- **`proxy.cgi` 误报 direct**：`grep '"type": "direct"'` 全文匹配，配置末尾那条备用 direct 出站被误命中，urltest 主配置显示成"透传"。改成只看 outbounds 数组第一个 `type`（默认出站），与 proxy-lib.sh 判据统一，四种配置来回切换实测一致。
+- **direct 透传反而更慢**：没节点时开关是空转，实测 YTS 直连 1~2 秒、经 direct 透传 12.8 秒。页面因此显示"代理:开(透传)"，不做静默处理。
+- `$PROXY_OPT` 使用处**不能加引号**：加引号时空值会留下一个空参数，curl 报 `option : blank argument`（实测过）。空值靠词分割自然消失才对。
+- `dns.servers[].address` 不存在（sing-box 1.14 报 unknown field），且 `"type":"proxy"` 不是合法类型名。
+- 后台进程必须 `< /dev/null`，否则继承 httpd 给 CGI 的 stdin 把响应卡住。
+- 不记录、不 kill watchdog 的 PID：setsid 会 fork，`$!` 不是 watchdog 本体，那个号被回收后照它 kill 就是杀错无关进程。只靠 `state` 文件，watchdog 每 30 秒读一次、见 off 自退。
+
+订阅验证：v2rayfree.org 每日更新（445 个节点）里**大部分是死的**，但 `shadowsocks aes-256-gcm` 那簇（202.50.253.x:19999）复现验证有效——apibay 从"直连 000 超时 20 秒"变成"经代理 200、3~4 秒、100 条结果"。结论：可当应急备胎，不适合当稳定依赖（每天换订阅、说没就没）。
+
 ## 2026-10-29 新增第三源：YTS
 
 在 K40 上实测了 60+ 个"国内可直连"的磁力站候选，结论：

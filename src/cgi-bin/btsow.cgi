@@ -11,6 +11,10 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
+# 注意：这个源**故意不接代理**。btsow 实测国内直连 1~2 秒且从未失败，
+# 绕到境外节点不可能更快，还多一层节点故障风险。
+# 代理只给 apibay / YTS 这类被墙或飘忽的站用（见 search.cgi、yts.cgi）。
+
 Q=$(cat)
 # 丢掉换行/制表/空字节，避免把 JSON 拼坏
 Q=$(printf '%s' "$Q" | tr -d '\000\r\n\t')

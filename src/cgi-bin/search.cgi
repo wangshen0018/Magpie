@@ -11,6 +11,14 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
+# ---- 本地代理感知：库在 web 根外（.sh 会被 httpd 当静态文件下载，不能放 www/）----
+# 库只在"开关为 on 且配置里有真实节点"时才给 PROXY_OPT 赋值；direct 透传不注入。
+# 注意使用处 $PROXY_OPT 一律不加引号：加引号时空值会留下一个空参数，
+# curl 报 "option : blank argument" 直接失败（实测过）。
+for _l in /data/adb/srv/magnet/proxy-lib.sh /data/adb/magnet/proxy-lib.sh; do
+  [ -f "$_l" ] && { . "$_l"; break; }
+done
+
 q="${QUERY_STRING}"
 case "$q" in
   q=*) q="${q#q=}" ;;
@@ -28,6 +36,7 @@ fi
 # 注意：不要带 cat=0。apibay 现在把 cat=0 当成一个真实的分类，实测稳定返回
 # "No results returned"；不带 cat（或 cat=）才是全站搜索。
 OUT=$("$CURL" -s --max-time 28 \
+  $PROXY_OPT \
   -A 'Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36' \
   "https://apibay.org/q.php?q=${q}" 2>/dev/null)
 
