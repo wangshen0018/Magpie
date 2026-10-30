@@ -32,7 +32,11 @@ case "$q" in
 esac
 q="${q%%&*}"
 
-if [ -z "$q" ]; then
+# 判空必须解码后判：实测 q=%20（纯空格）会让 Nyaa 忽略关键词、返回整站
+# current 页（"out of 1000"），前端就会显示一堆无关条目。YTS 踩过同一个坑。
+# 注意：只用于判空，真正请求仍用编码原值（同一编码层）。
+qchk=$(printf '%s' "$q" | sed 's/%20//g; s/%09//g; s/%0[aAdD]//g; s/+/ /g' | tr -d ' \t')
+if [ -z "$qchk" ]; then
   echo '{"data":[]}'
   exit 0
 fi

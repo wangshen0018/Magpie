@@ -32,7 +32,10 @@ case "$q" in
 esac
 q="${q%%&*}"
 
-if [ -z "$q" ]; then
+# 判空要解码后判，理由同 nyaa.cgi：纯空格输入会被站点当"无关键词"处理，
+# 返回整站列表，用户看到一堆无关条目。只用于判空，请求仍用原编码值。
+qchk=$(printf '%s' "$q" | sed 's/%20//g; s/%09//g; s/%0[aAdD]//g; s/+/ /g' | tr -d ' \t')
+if [ -z "$qchk" ]; then
   echo '{"data":[]}'
   exit 0
 fi
