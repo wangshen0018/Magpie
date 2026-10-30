@@ -2,8 +2,9 @@
 # CGI: 探测两个源站的连通状态，供页面状态条使用
 # 出参: {"btsow":{"ok":true,"code":"200"},"tpb":{...},"t":时间戳}
 #
-# 两个探测并行执行，单个 8 秒超时，整体约 8 秒内返回（前端等 10 秒）。
-# 串行的话最坏要 16 秒，前端早断了，状态条会一直是红的。
+# 三个探测并行执行，单个 5 秒超时，整体约 5~6 秒返回（前端等 10 秒，留足余量）。
+# 超时给短是有意的：apibay 实测经常 28 秒以上，给 8 秒只是让总时长顶到前端上限，
+# 结果反而更差（前端 10 秒等满、状态还可能拿不到）。5 秒不应答就当"未知"，符合事实。
 
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-store\r\n'
@@ -35,16 +36,16 @@ if [ -n "$TMP" ]; then
   F2="$TMP/.magpie_st_$$_2"
   F3="$TMP/.magpie_st_$$_3"
 
-  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 8 -A "$UA" -X POST \
+  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" -X POST \
     -H 'Content-Type: application/json' -H 'Referer: https://btsow.live/' \
     -d '[{"search":"inception"},1,1]' "$BTSOW_URL" > "$F1" 2>/dev/null &
   P1=$!
 
-  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 8 -A "$UA" \
+  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
     "$TPB_URL" > "$F2" 2>/dev/null &
   P2=$!
 
-  "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 8 -A "$UA" \
+  "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
     "$YTS_URL" > "$F3" 2>/dev/null &
   P3=$!
 

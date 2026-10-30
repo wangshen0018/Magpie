@@ -22,11 +22,17 @@ case "$q" in
 esac
 q="${q%%&*}"
 
-# YTS 只有英文电影，中文关键词返回空属正常（和 apibay 一样）
-if [ -z "$q" ]; then
+# q 是 URL 编码的，直接拼进 YTS 的 query_term 正好（同一编码层），不能在这里解码。
+# 但判空必须解码后判：实测 q=%20 / q=+ / q=%09 这类纯空白输入，YTS 会返回
+# 整站列表（movie_count 78129），前端就会显示一堆无关条目。
+# 所以另取一份副本解码后 trim，只用来判断"是不是真的没输入"。
+qchk=$(printf '%s' "$q" | sed 's/%20//g; s/%09//g; s/%0[aAdD]//g; s/+/ /g' | tr -d ' \t')
+if [ -z "$qchk" ]; then
   echo '{"status":"error","data":{"movies":[]}}'
   exit 0
 fi
+
+# YTS 只有英文电影，中文关键词返回 movie_count 0 属正常（和 apibay 一样），不用拦
 
 UA='Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36'
 

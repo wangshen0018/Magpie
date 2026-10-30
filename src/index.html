@@ -174,6 +174,15 @@ async function checkStatus(){
 }
 
 function sortAll(){
+  // 同一个 hash 可能被多个源返回（比如同一部片子的磁力在 TPB 和 YTS 都有，
+  // 或翻页时重复出现），先去重再排序，否则列表里会出现两条一模一样的条目。
+  const seen = new Set();
+  ALL = ALL.filter(x => {
+    const k = String(x.hash || '').toUpperCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
   // 有做种数的排前面（TPB / YTS），BTSOW 中文资源多、按更新时间排后面
   const withSeeds = ALL.filter(x => x.seeders !== null)
     .sort((a, b) => (+b.seeders || 0) - (+a.seeders || 0));
@@ -196,6 +205,8 @@ async function doSearch(){
     ALL = ALL.concat(rows);
     sortAll();
     render();
+    // 已经出结果就把按钮放出来，不必干等最慢的 TPB（实测可到 28 秒）
+    if (ALL.length) go.disabled = false;
   };
 
   await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcTPB(q).then(merge)]);
@@ -230,12 +241,14 @@ function render(){
 async function addUri(hash, btn){
   btn.disabled = true; btn.textContent = '加入中';
   try {
-    const r = await fetch('cgi-bin/add.cgi?h=' + encodeURIComponent(hash));
+    // 加超时：aria2 没起或端口不通时，不加限制会一直卡在"加入中"
+    const r = await fetchT('cgi-bin/add.cgi?h=' + encodeURIComponent(hash), {}, 15000);
     const d = await r.json();
     if (d && d.result) { btn.textContent = '已加入 ✓'; btn.style.background = '#25a244'; btn.style.color='#fff'; }
     else { btn.textContent = '失败'; btn.disabled = false; alert('加入失败：' + JSON.stringify(d)); }
   } catch (e) {
     btn.textContent = '失败'; btn.disabled = false;
+    alert('请求超时或连接失败，确认 aria2 的 RPC 是否在运行');
   }
 }
 function copyMagnet(hash){
