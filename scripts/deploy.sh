@@ -9,32 +9,41 @@ set -e
 
 TARGET=${1:-/data/adb/srv/magnet}
 WWW="$TARGET/www"
+LIB="$TARGET/lib"
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 
 echo "源目录: $SRC"
 echo "目标目录: $TARGET"
 
-mkdir -p "$WWW/cgi-bin"
+mkdir -p "$WWW/cgi-bin" "$LIB"
 
 cp "$SRC/src/index.html" "$WWW/index.html"
 cp "$SRC"/src/cgi-bin/*.cgi "$WWW/cgi-bin/"
 cp "$SRC/static/httpd.conf" "$WWW/httpd.conf"
+
+# aria2 配置读取的公共库。故意放在 www 之外：httpd 的根目录是 www，
+# 放里面就能被浏览器当静态文件直接下载走源码。
+cp "$SRC/src/lib/aria2.sh" "$LIB/aria2.sh"
 
 # 开机自启（/data/adb/service.d/srv.sh）读的是 TARGET 根目录那份 httpd.conf，
 # 而 start-service.sh 读的是 www 下那份。两份都写，避免以后只改一边导致行为不一致。
 cp "$SRC/static/httpd.conf" "$TARGET/httpd.conf" 2>/dev/null || true
 
 chmod 755 "$WWW/cgi-bin/"*.cgi
-chmod 644 "$WWW/index.html" "$WWW/httpd.conf"
+chmod 644 "$WWW/index.html" "$WWW/httpd.conf" "$LIB/aria2.sh"
 
 # 部署后自检：少一个文件就报错，避免出现"启动后 404 或读不到配置"
 MISS=0
-for f in index.html httpd.conf cgi-bin/search.cgi cgi-bin/btsow.cgi cgi-bin/yts.cgi cgi-bin/add.cgi cgi-bin/status.cgi; do
+for f in index.html httpd.conf cgi-bin/search.cgi cgi-bin/btsow.cgi cgi-bin/yts.cgi cgi-bin/add.cgi cgi-bin/list.cgi cgi-bin/status.cgi; do
   if [ ! -f "$WWW/$f" ]; then
     echo "缺失: $WWW/$f"
     MISS=1
   fi
 done
+if [ ! -f "$LIB/aria2.sh" ]; then
+  echo "缺失: $LIB/aria2.sh"
+  MISS=1
+fi
 
 if [ "$MISS" -ne 0 ]; then
   echo "部署未完成，请检查上面的缺失项"

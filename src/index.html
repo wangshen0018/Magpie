@@ -6,10 +6,12 @@
 <title>磁力搜索</title>
 <style>
 *{box-sizing:border-box}
-body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;padding:12px;background:#f5f6f8;color:#222}
+body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;padding:12px 12px 70px;background:#f5f6f8;color:#222}
 h2{margin:0 0 10px;font-size:17px}
 .bar{display:flex;gap:8px;margin-bottom:10px}
-input{flex:1;padding:11px 12px;border:1px solid #ccc;border-radius:8px;font-size:15px;outline:none}
+.qwrap{flex:1;position:relative}
+.qwrap input{width:100%}
+input{padding:11px 12px;border:1px solid #ccc;border-radius:8px;font-size:15px;outline:none}
 input:focus{border-color:#007bff}
 button{padding:11px 16px;border:none;border-radius:8px;background:#007bff;color:#fff;font-size:15px;cursor:pointer}
 button:active{background:#0056b3}
@@ -38,12 +40,41 @@ button:disabled{background:#9bbce0}
 .st.fail .dot{background:#c1121f}
 .st.on{font-weight:700}
 .st-ts{margin-left:auto;color:#999;font-size:11px}
+
+/* 搜索历史下拉 */
+.hist{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #dbe6f5;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.1);z-index:30;max-height:260px;overflow:auto;display:none}
+.hist .hh{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:12px;color:#8a9bb0;background:#f8fafd;border-bottom:1px solid #eef3fa;position:sticky;top:0}
+.hist .hh b{font-weight:600;color:#5b6b80}
+.hist .clr{color:#007bff;cursor:pointer;padding:2px 6px}
+.hist .hi{padding:10px 12px;font-size:14px;cursor:pointer;border-bottom:1px solid #f4f7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .hi:last-child{border-bottom:none}
+.hist .hi:active{background:#f0f6ff}
+.hist .hi i{color:#b7c3d4;font-style:normal;margin-right:6px;font-size:12px}
+
+/* 底部下载进度 */
+.taskbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e3e9f2;box-shadow:0 -2px 10px rgba(0,0,0,.06);z-index:40;padding-bottom:env(safe-area-inset-bottom);display:none}
+.tb-sum{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:13px;cursor:pointer;user-select:none}
+.tb-sum .tb-ico{color:#007bff;font-weight:700;min-width:12px;text-align:center}
+.tb-sum .tb-txt{flex:1;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-sum .tb-spd{color:#25a244;font-weight:600;font-size:12px}
+.tb-sum .tb-caret{color:#9aa8ba;font-size:10px;transition:transform .15s}
+.taskbar.open .tb-caret{transform:rotate(180deg)}
+.tb-list{display:none;border-top:1px solid #f0f4fa;max-height:44vh;overflow:auto;padding:4px 0}
+.taskbar.open .tb-list{display:block}
+.tb-item{padding:8px 14px}
+.tb-item .tn{font-size:12px;color:#444;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-item .pr{height:4px;background:#eef2f7;border-radius:2px;overflow:hidden}
+.tb-item .pr i{display:block;height:100%;background:#007bff;border-radius:2px;transition:width .3s}
+.tb-item .tm{display:flex;justify-content:space-between;font-size:11px;color:#8a9bb0;margin-top:4px}
 </style>
 </head>
 <body>
 <h2>🔍 磁力搜索</h2>
 <div class="bar">
-  <input id="q" placeholder="片名 / 关键词（支持中文）" autocomplete="off">
+  <div class="qwrap">
+    <input id="q" placeholder="片名 / 关键词（支持中文）" autocomplete="off">
+    <div class="hist" id="hist"></div>
+  </div>
   <button id="go" onclick="doSearch()">搜索</button>
 </div>
 <div class="statusbar" id="statusbar">
@@ -59,6 +90,16 @@ button:disabled{background:#9bbce0}
   <div class="tab" data-src="yts" onclick="setTab(this)">YTS</div>
 </div>
 <div id="out"><div class="hint">输入关键词开始搜索</div></div>
+
+<div class="taskbar" id="taskbar">
+  <div class="tb-sum" onclick="toggleTaskbar()">
+    <span class="tb-ico" id="tb-ico">↓</span>
+    <span class="tb-txt" id="tb-txt">—</span>
+    <span class="tb-spd" id="tb-spd"></span>
+    <span class="tb-caret">▲</span>
+  </div>
+  <div class="tb-list" id="tb-list"></div>
+</div>
 <script>
 const out = document.getElementById('out');
 const go  = document.getElementById('go');
@@ -90,6 +131,51 @@ function setTab(el){
   el.classList.add('on');
   CUR = el.dataset.src;
   render();
+}
+
+/* ---------------- 搜索历史 ----------------
+   存在 localStorage，最多 10 条，最新的在最前。
+   只存关键词本身，不存结果——结果是几万个字符，撑不起 localStorage 的 5MB 配额。 */
+const HIST_KEY = 'magpie_history';
+const HIST_MAX = 10;
+
+function histLoad(){
+  try {
+    const a = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : [];
+  } catch(e) { return []; }
+}
+function histPush(q){
+  q = String(q || '').trim();
+  if (!q) return;
+  // 已存在的先删掉再插到最前，避免重复项堆积
+  const a = histLoad().filter(x => x !== q);
+  a.unshift(q);
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(a.slice(0, HIST_MAX))); } catch(e) {}
+}
+function showHist(){
+  const a = histLoad();
+  const box = document.getElementById('hist');
+  if (!a.length) { hideHist(); return; }
+  box.innerHTML =
+    '<div class="hh"><b>最近搜索</b><span class="clr" onclick="histClear()">清空</span></div>' +
+    a.map((q, i) => `<div class="hi" onclick="pickHist(${i})"><i>${i + 1}</i>${esc(q)}</div>`).join('');
+  box.style.display = 'block';
+}
+function hideHist(){
+  const box = document.getElementById('hist');
+  if (box) box.style.display = 'none';
+}
+function pickHist(i){
+  const a = histLoad();
+  if (!a[i]) return;
+  qEl.value = a[i];
+  hideHist();
+  doSearch();
+}
+function histClear(){
+  try { localStorage.removeItem(HIST_KEY); } catch(e) {}
+  hideHist();
 }
 
 async function fetchT(url, opt, ms){
@@ -194,6 +280,8 @@ function sortAll(){
 async function doSearch(){
   const q = qEl.value.trim();
   if (!q) return;
+  hideHist();
+  histPush(q);        // 记进历史（重复的会自动提到最前）
   go.disabled = true;
   ALL = [];
   const myReq = ++REQ;
@@ -256,8 +344,121 @@ function copyMagnet(hash){
   if (navigator.clipboard) navigator.clipboard.writeText(m).then(()=>alert('磁力链接已复制'),()=>prompt('复制磁力链接：', m));
   else prompt('复制磁力链接：', m);
 }
+/* ---------------- 下载进度 ----------------
+   轮询 cgi-bin/list.cgi（后端只做 token 补齐和拼接，解析交给这里）。
+   有任务时 3 秒一次，空闲 15 秒一次，别让手机一直醒着。 */
+const TB_KEY = 'magpie_tb_open';
+let tbTimer = null, tbLastIds = new Set(), tbDoneUntil = 0, tbOpen = false;
+
+// aria2 返回的 bittorrent.info.name 是 base64（原文是 UTF-8 文件名，中文必须这样解）
+function b64dec(s){
+  try {
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch(e) { return String(s || ''); }
+}
+function taskName(t){
+  if (t.bittorrent && t.bittorrent.info && t.bittorrent.info.name) return b64dec(t.bittorrent.info.name);
+  if (t.files && t.files.length && t.files[0].path) return String(t.files[0].path).split('/').pop();
+  return t.gid || '未知任务';
+}
+function taskPct(t){
+  const total = +t.totalLength || 0, done = +t.completedLength || 0;
+  if (!total) return 0;
+  return Math.min(100, Math.floor(done / total * 100));
+}
+function toggleTaskbar(){
+  tbOpen = !tbOpen;
+  document.getElementById('taskbar').classList.toggle('open', tbOpen);
+  try { localStorage.setItem(TB_KEY, tbOpen ? '1' : '0'); } catch(e) {}
+}
+
+function renderTaskbar(act, wai, stp){
+  const bar  = document.getElementById('taskbar');
+  const ico  = document.getElementById('tb-ico');
+  const txt  = document.getElementById('tb-txt');
+  const spd  = document.getElementById('tb-spd');
+  const list = document.getElementById('tb-list');
+  const live = act.concat(wai);
+
+  if (live.length) {
+    const total = live.reduce((s, t) => s + (+t.totalLength || 0), 0);
+    const done  = live.reduce((s, t) => s + (+t.completedLength || 0), 0);
+    const speed = act.reduce((s, t) => s + (+t.downloadSpeed || 0), 0);
+    ico.textContent = '↓';
+    ico.style.color = '#007bff';
+    txt.textContent = live.length + ' 个任务 · ' + (total ? Math.floor(done / total * 100) : 0) + '%';
+    spd.textContent = speed ? fmtSize(speed) + '/s' : '等待中';
+    list.innerHTML = live.slice(0, 12).map(t => {
+      const sp = +t.downloadSpeed || 0;
+      const right = sp ? fmtSize(sp) + '/s' : (t.status === 'paused' ? '已暂停' : '等待中');
+      return '<div class="tb-item">' +
+        '<div class="tn">' + esc(taskName(t)) + '</div>' +
+        '<div class="pr"><i style="width:' + taskPct(t) + '%"></i></div>' +
+        '<div class="tm"><span>' + fmtSize(+t.completedLength || 0) + ' / ' + fmtSize(+t.totalLength || 0) +
+        '</span><span>' + right + '</span></div></div>';
+    }).join('');
+    bar.style.display = 'block';
+    tbLastIds = new Set(live.map(t => t.gid));
+    tbDoneUntil = 0;
+    return;
+  }
+
+  // 这一轮没有进行中的任务但上一轮有：说明刚下完，给个结果提示再自动收起
+  if (tbLastIds.size) {
+    const fin  = stp.filter(t => tbLastIds.has(t.gid));
+    const okN  = fin.filter(t => t.status === 'complete').length;
+    const errN = fin.filter(t => t.status === 'error' || t.status === 'removed').length;
+    ico.textContent = errN ? '!' : '✓';
+    ico.style.color = errN ? '#c1121f' : '#25a244';
+    txt.textContent = errN
+      ? errN + ' 个任务失败' + (okN ? '，' + okN + ' 个完成' : '')
+      : (okN || fin.length) + ' 个任务已完成';
+    spd.textContent = '';
+    list.innerHTML = '';
+    bar.style.display = 'block';
+    tbLastIds = new Set();
+    tbDoneUntil = Date.now() + 5000;
+    return;
+  }
+
+  if (Date.now() < tbDoneUntil) return;   // 完成提示还没到期，先留着
+  bar.style.display = 'none';
+}
+
+async function pollTasks(){
+  clearTimeout(tbTimer);
+  let next = 15000;
+  try {
+    const r = await fetchT('cgi-bin/list.cgi', {}, 12000);
+    const d = await r.json();
+    if (d && !d.error) {
+      const act = (d.active  && Array.isArray(d.active.result))  ? d.active.result  : [];
+      const wai = (d.waiting && Array.isArray(d.waiting.result)) ? d.waiting.result : [];
+      const stp = (d.stopped && Array.isArray(d.stopped.result)) ? d.stopped.result : [];
+      renderTaskbar(act, wai, stp);
+      next = (act.length + wai.length) ? 3000 : (Date.now() < tbDoneUntil ? 2000 : 15000);
+    } else {
+      document.getElementById('taskbar').style.display = 'none';
+    }
+  } catch(e) {
+    // aria2 没起或手机休眠时请求失败，静默处理，不弹窗打扰
+  }
+  tbTimer = setTimeout(pollTasks, next);
+}
+
 qEl.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+qEl.addEventListener('focus', showHist);
+qEl.addEventListener('click', showHist);
+document.addEventListener('click', e => { if (!e.target.closest('.qwrap')) hideHist(); });
+try {
+  tbOpen = localStorage.getItem(TB_KEY) === '1';
+  if (tbOpen) document.getElementById('taskbar').classList.add('open');
+} catch(e) {}
 checkStatus();
+pollTasks();
 </script>
 </body>
 </html>

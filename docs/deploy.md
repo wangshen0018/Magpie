@@ -89,7 +89,8 @@ AriaNg 的 `index.html` 里 `</body>` 前加一行：
 ```sh
 ps | grep httpd                      # 进程在不在
 netstat -tln | grep 8080             # 端口有没有占上
-ls -l /data/adb/srv/magnet/www/      # 文件在不在
+ls -l /data/adb/srv/magnet/www/      # 页面与 CGI 在不在
+ls -l /data/adb/srv/magnet/lib/      # 公共库在不在（缺了所有推送/进度都会报错）
 ```
 
 文件权限掉了就重跑一次 `deploy.sh`。
@@ -109,6 +110,7 @@ curl -X POST -H "Content-Type: text/plain" --data "流浪地球" "http://127.0.0
   curl -I https://btsow.live/
   ```
 - 返回 404 → `httpd.conf` 没生效或 CGI 没有执行权限，检查 `www/httpd.conf` 是否存在、`cgi-bin/*.cgi` 是否 755。
+- 返回 `{"error":"lib/aria2.sh not found, redeploy needed"}` → 只复制了 www 下的文件，`lib/aria2.sh` 没跟上。重跑一次 `deploy.sh` 即可。
 
 ### 状态条一直是红的
 
@@ -118,7 +120,9 @@ curl -X POST -H "Content-Type: text/plain" --data "流浪地球" "http://127.0.0
 curl "http://127.0.0.1:8080/cgi-bin/status.cgi"
 ```
 
-`code` 是 `timeout` 表示 8 秒内没连上，页面会把圆点显示成灰色（未知），不是红点；红点只在源站明确返回错误码时出现。这个只是显示，不影响实际搜索。
+`code` 是 `timeout` 表示 5 秒内没连上，页面会把圆点显示成灰色（未知），不是红点；红点只在源站明确返回错误码时出现。这个只是显示，不影响实际搜索。
+
+apibay 现在经常 28 秒以上不返回，所以 TPB 那个点长期是灰的属于正常现象，不是故障。
 
 ### 点「下载」没反应
 
