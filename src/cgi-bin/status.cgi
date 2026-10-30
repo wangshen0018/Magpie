@@ -1,10 +1,16 @@
 #!/system/bin/sh
-# CGI: 探测两个源站的连通状态，供页面状态条使用
-# 出参: {"btsow":{"ok":true,"code":"200"},"tpb":{...},"t":时间戳}
+# CGI: 探测三个源站的连通状态，供页面状态条使用
+# 出参: {"btsow":{"ok":bool,"code":"200|timeout|..."},"tpb":{...},"yts":{...},"t":时间戳}
 #
-# 三个探测并行执行，单个 5 秒超时，整体约 5~6 秒返回（前端等 10 秒，留足余量）。
-# 超时给短是有意的：apibay 实测经常 28 秒以上，给 8 秒只是让总时长顶到前端上限，
-# 结果反而更差（前端 10 秒等满、状态还可能拿不到）。5 秒不应答就当"未知"，符合事实。
+# 语义很重要：状态点表达的是「用户此刻能不能从这一源搜到结果」，
+# 不是「代理这条路通不通」。所以代理开着时，apibay / YTS 会同时探代理和
+# 直连两条路，任一 200 就算通——否则会出现「点显示红的、但其实搜得到」的
+# 自相矛盾（实测踩过：节点死光时搜索自动退回直连能出结果，状态点却报红）。
+# btsow 永远直连，因为 btsow.cgi 本身就不注入代理。
+#
+# 三个源并行探测，单个 5 秒超时，整体约 5~6 秒（前端等 10 秒）。
+# 5 秒不应答就当"未知"（灰点）：apibay 实测经常 28 秒以上不返回，
+# 等更久只会顶到前端上限、状态反而更差。
 
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-store\r\n'
@@ -14,8 +20,7 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
-# 本地代理感知：探测必须和实际搜索走同一条路径，否则会出现
-# "状态点是红的、但开着代理其实搜得到" 的误导（详见 search.cgi 注释）
+# 代理感知库：决定 $PROXY_OPT 是否有值（开关 on + 配置有真实节点才注入）
 for _l in /data/adb/srv/magnet/proxy-lib.sh /data/adb/magnet/proxy-lib.sh; do
   [ -f "$_l" ] && { . "$_l"; break; }
 done
@@ -23,8 +28,7 @@ done
 UA='Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36'
 
 BTSOW_URL='https://btsow.live/bts/data/api/search'
-# 不要带 cat=0：apibay 把它当真实分类，会稳定返回占位记录（见 search.cgi 说明）。
-# 这里只看状态码，但用法保持一致，免得留下错误的参考样板。
+# 不要带 cat=0：apibay 把它当真实分类，会稳定返回占位记录（见 search.cgi）
 TPB_URL='https://apibay.org/q.php?q=inception'
 YTS_URL='https://yts.gg/api/v2/list_movies.json?query_term=inception&limit=1'
 
@@ -37,35 +41,49 @@ for d in "$TMPDIR" /data/local/tmp /cache /tmp; do
   fi
 done
 
+btsow_code=""
+tpb_code=""
+yts_code=""
+
 if [ -n "$TMP" ]; then
-  F1="$TMP/.magpie_st_$$_1"
-  F2="$TMP/.magpie_st_$$_2"
-  F3="$TMP/.magpie_st_$$_3"
+  B="$TMP/.magpie_st_$$"
 
-  "$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" -X POST \
+  # btsow：只探直连（与 btsow.cgi 的实际行为一致）
+  "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" -X POST \
     -H 'Content-Type: application/json' -H 'Referer: https://btsow.live/' \
-    -d '[{"search":"inception"},1,1]' "$BTSOW_URL" > "$F1" 2>/dev/null &
-  P1=$!
+    -d '[{"search":"inception"},1,1]' "$BTSOW_URL" > "$B.1" 2>/dev/null &
 
-  "$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
-    "$TPB_URL" > "$F2" 2>/dev/null &
-  P2=$!
+  if [ -n "$PROXY_OPT" ]; then
+    # 代理开着：两条路都探（.2p/.3p 走代理，.2d/.3d 直连）
+    "$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$TPB_URL" > "$B.2p" 2>/dev/null &
+    "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$TPB_URL" > "$B.2d" 2>/dev/null &
+    "$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$YTS_URL" > "$B.3p" 2>/dev/null &
+    "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$YTS_URL" > "$B.3d" 2>/dev/null &
+  else
+    "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$TPB_URL" > "$B.2d" 2>/dev/null &
+    "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
+      "$YTS_URL" > "$B.3d" 2>/dev/null &
+  fi
 
-  "$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
-    "$YTS_URL" > "$F3" 2>/dev/null &
-  P3=$!
+  wait
 
-  wait $P1
-  wait $P2
-  wait $P3
-
-  btsow_code=$(cat "$F1" 2>/dev/null)
-  tpb_code=$(cat "$F2" 2>/dev/null)
-  yts_code=$(cat "$F3" 2>/dev/null)
-  rm -f "$F1" "$F2" "$F3"
+  btsow_code=$(cat "$B.1" 2>/dev/null)
+  tpb_code=$(cat "$B.2d" 2>/dev/null)
+  yts_code=$(cat "$B.3d" 2>/dev/null)
+  # 代理那条路只要也拿到 200，就覆盖成 200（任一通即算通）
+  if [ -n "$PROXY_OPT" ]; then
+    [ "$(cat "$B.2p" 2>/dev/null)" = "200" ] && tpb_code=200
+    [ "$(cat "$B.3p" 2>/dev/null)" = "200" ] && yts_code=200
+  fi
+  rm -f "$B.1" "$B.2p" "$B.2d" "$B.3p" "$B.3d"
 else
   # 没有可写临时目录时退回串行，超时收短以控制总时长
-  btsow_code=$("$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" -X POST \
+  btsow_code=$("$CURL" -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" -X POST \
     -H 'Content-Type: application/json' -H 'Referer: https://btsow.live/' \
     -d '[{"search":"inception"},1,1]' "$BTSOW_URL" 2>/dev/null)
   tpb_code=$("$CURL" $PROXY_OPT -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \

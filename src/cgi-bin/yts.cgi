@@ -3,9 +3,8 @@
 # 入参: q=关键词（前端已做 URL 编码，这里原样拼进 URL）
 # 出参: YTS 原始 JSON（{...}）；失败时返回 {"status":"error","data":{"movies":[]}}
 #
-# 为什么需要域名回退：YTS 官方 2026-04-10 起把 API base 迁到 movies-api.accel.li，
-# 旧域名 yts.gg 目前仍在服务（实测 2.5 秒返回）。这类站换域名很频繁，
-# 硬编码单域名迟早变成死源，所以依次尝试，谁先返回完整 JSON 就用谁。
+# 域名回退：YTS 官方 2026-04-10 起把 API base 迁到 movies-api.accel.li，
+# 旧域名 yts.gg 目前仍在服务（实测 2.5 秒返回）。这类站换域名频繁，不硬编码单域名。
 
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-store\r\n'
@@ -15,7 +14,6 @@ printf '\r\n'
 CURL=$(command -v curl 2>/dev/null)
 [ -z "$CURL" ] && CURL=/system/bin/curl
 
-# 本地代理感知（详见 search.cgi 注释：使用处 $PROXY_OPT 不能加引号）
 for _l in /data/adb/srv/magnet/proxy-lib.sh /data/adb/magnet/proxy-lib.sh; do
   [ -f "$_l" ] && { . "$_l"; break; }
 done
@@ -27,17 +25,14 @@ case "$q" in
 esac
 q="${q%%&*}"
 
-# q 是 URL 编码的，直接拼进 YTS 的 query_term 正好（同一编码层），不能在这里解码。
+# q 是 URL 编码的，直接拼进 query_term 正好（同一编码层），不能在这里解码。
 # 但判空必须解码后判：实测 q=%20 / q=+ / q=%09 这类纯空白输入，YTS 会返回
-# 整站列表（movie_count 78129），前端就会显示一堆无关条目。
-# 所以另取一份副本解码后 trim，只用来判断"是不是真的没输入"。
+# 整站列表（movie_count 78129），前端就会显示一堆与关键词无关的条目。
 qchk=$(printf '%s' "$q" | sed 's/%20//g; s/%09//g; s/%0[aAdD]//g; s/+/ /g' | tr -d ' \t')
 if [ -z "$qchk" ]; then
   echo '{"status":"error","data":{"movies":[]}}'
   exit 0
 fi
-
-# YTS 只有英文电影，中文关键词返回 movie_count 0 属正常（和 apibay 一样），不用拦
 
 UA='Mozilla/5.0 (Linux; Android 13; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36'
 
@@ -50,18 +45,37 @@ good_json() {
   return 0
 }
 
-OUT=""
-# 单个 base 给 9 秒，两个都试最多约 18 秒；前端 srcYTS 要等得更久
-for base in yts.gg movies-api.accel.li; do
-  R=$("$CURL" -sL --max-time 9 \
-    $PROXY_OPT \
-    -A "$UA" \
-    "https://${base}/api/v2/list_movies.json?query_term=${q}&limit=20" 2>/dev/null)
+try_base() {
+  # $1=域名 $2=额外 curl 参数（代理开关，可为空）$3=超时秒数
+  R=$("$CURL" -sL --max-time "$3" $2 -A "$UA" \
+    "https://$1/api/v2/list_movies.json?query_term=${q}&limit=20" 2>/dev/null)
   if good_json "$R"; then
-    OUT="$R"
-    break
+    printf '%s' "$R"
+    return 0
   fi
+  return 1
+}
+
+# 与 search.cgi 相反：**直连优先，代理兜底**。
+# 因为 YTS 的国内直连本来就是好的（实测 1.5~2.5 秒、从未失败），
+# 先走代理反而白多一跳延迟；代理只在直连两个域名都不通时才派上用场。
+#
+# 代理死亡也不会拖累这里：urltest 成员全死时 sing-box 立即拒绝连接
+# （实测 connection refused、毫秒级），不是慢慢超时。
+# 时序预算：直连两跳各 6 秒（YTS 实测 1.5~2.5 秒就回，6 秒很宽），
+# 代理两跳各 8 秒。最坏 6+6+8+8=28 秒，与 search.cgi 同口径；
+# 前端 srcYTS 相应从 20 秒放宽到 30 秒，否则后端还没跑完前端先放弃。
+OUT=""
+for base in yts.gg movies-api.accel.li; do
+  OUT=$(try_base "$base" "" 6) && break
+  OUT=""
 done
+if [ -z "$OUT" ] && [ -n "$PROXY_OPT" ]; then
+  for base in yts.gg movies-api.accel.li; do
+    OUT=$(try_base "$base" "$PROXY_OPT" 8) && break
+    OUT=""
+  done
+fi
 
 if [ -z "$OUT" ]; then
   echo '{"status":"error","data":{"movies":[]}}'

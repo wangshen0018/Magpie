@@ -218,8 +218,9 @@ async function srcBtsow(q){
 // 一部电影有多个清晰度版本（实测 limit=1 就有 2~3 个 torrent），全部展开成独立条目。
 async function srcYTS(q){
   try {
-    // 后端最多试两个域名、约 18 秒，这里留 20 秒余量
-    const r = await fetchT('cgi-bin/yts.cgi?q=' + encodeURIComponent(q), {}, 20000);
+    // 后端最坏 28 秒（直连两跳 6+6，都不通再走代理两跳 8+8），这里给 30 秒余量。
+    // 原来只等 20 秒：后端还没跑完前端就先放弃，代理兜底那条路永远等不到结果。
+    const r = await fetchT('cgi-bin/yts.cgi?q=' + encodeURIComponent(q), {}, 30000);
     const j = await r.json();
     const movies = (j && j.data && Array.isArray(j.data.movies)) ? j.data.movies : [];
     const rows = [];
