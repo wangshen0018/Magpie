@@ -39,7 +39,7 @@ chmod 644 "$WWW/index.html" "$WWW/httpd.conf" "$LIB/aria2.sh"
 
 # 部署后自检：少一个文件就报错，避免出现"启动后 404 或读不到配置"
 MISS=0
-for f in index.html httpd.conf cgi-bin/search.cgi cgi-bin/btsow.cgi cgi-bin/yts.cgi cgi-bin/proxy.cgi cgi-bin/add.cgi cgi-bin/list.cgi cgi-bin/status.cgi; do
+for f in index.html httpd.conf cgi-bin/search.cgi cgi-bin/btsow.cgi cgi-bin/yts.cgi cgi-bin/nyaa.cgi cgi-bin/proxy.cgi cgi-bin/add.cgi cgi-bin/list.cgi cgi-bin/status.cgi; do
   if [ ! -f "$WWW/$f" ]; then
     echo "缺失: $WWW/$f"
     MISS=1

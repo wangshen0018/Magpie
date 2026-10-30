@@ -6,8 +6,8 @@
 
 ## 能干什么
 
-- 目前可以搜索三个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）、**YTS**（英文电影，画质分版本）
-- 页面顶部三个小圆点，显示各站当前连不连得上，30 秒自动刷新
+- 目前可以搜索四个站：**btsow**（中文资源多）、**apibay**（英文资源，带做种数）、**YTS**（英文电影，画质分版本）、**Nyaa**（番剧/日影，**需开代理**，支持中文关键词）
+- 页面顶部四个小圆点，显示各站当前连不连得上，30 秒自动刷新（Nyaa 只在代理开着时才可能变绿）
 - 结果里「下载」直接进 aria2，「复制」拿磁力链接
 - **搜索历史**：点搜索框弹出最近 10 个关键词，点一下直接搜，可一键清空
 - **下载进度**：屏幕底部一条常驻细栏，显示任务数、总进度、当前速度；点一下展开看每个任务的进度条。没有任务时自动隐藏
@@ -40,10 +40,11 @@ src/index.html          搜索页面（单文件，样式脚本都在这）
 src/cgi-bin/search.cgi  apibay 搜索转发
 src/cgi-bin/btsow.cgi   btsow 搜索转发（故意不接代理，直连最快）
 src/cgi-bin/yts.cgi     YTS 搜索转发（英文电影，带域名回退）
+src/cgi-bin/nyaa.cgi    Nyaa 搜索转发（番剧/日影，HTML 转 JSON，需代理）
 src/cgi-bin/proxy.cgi   代理开关（sing-box 启停，节点信息不出服务端）
 src/cgi-bin/add.cgi     推磁力给本机 aria2（rpc-secret 在服务端读，不进页面）
 src/cgi-bin/list.cgi    查 aria2 当前下载情况（底部进度条用）
-src/cgi-bin/status.cgi  探测三个站通不通（并行，约 6 秒出结果）
+src/cgi-bin/status.cgi  探测四个站通不通（并行，约 6 秒出结果）
 src/lib/aria2.sh        aria2 配置读取与 RPC 调用的公共库（部署到 www 之外）
 scripts/deploy.sh       部署
 scripts/start-service.sh 启动
@@ -76,10 +77,11 @@ docs/deploy.md          部署与排障
 | `/cgi-bin/search.cgi` | GET | `q=关键词`（URL 编码） | apibay 原始 JSON 数组 |
 | `/cgi-bin/btsow.cgi` | POST | 正文为 UTF-8 原文关键词 | btsow 原始 JSON |
 | `/cgi-bin/yts.cgi` | GET | `q=关键词`（URL 编码） | YTS 原始 JSON（`data.movies[].torrents[]`） |
+| `/cgi-bin/nyaa.cgi` | GET | `q=关键词`（URL 编码） | `{"data":[{"hash","name","size","seeders","leechers"}]}` |
 | `/cgi-bin/proxy.cgi` | GET | `a=status\|on\|off\|touch`（默认 status） | `{"on":bool,"alive":bool,"addr":"...","idle":秒,"outbound":"direct\|custom"}` |
 | `/cgi-bin/add.cgi` | GET | `h=info_hash`（32 或 40 位十六进制） | aria2 的 JSONRPC 响应 |
 | `/cgi-bin/list.cgi` | GET | 无 | `{"active":{...},"waiting":{...},"stopped":{...}}`，三个字段都是 aria2 原始响应 |
-| `/cgi-bin/status.cgi` | GET | 无 | `{"btsow":{"ok":true,"code":"200"},"tpb":{...},"yts":{...},"t":时间戳}` |
+| `/cgi-bin/status.cgi` | GET | 无 | `{"btsow":{...},"tpb":{...},"yts":{...},"nyaa":{...},"t":时间戳}` |
 
 ## 说明
 

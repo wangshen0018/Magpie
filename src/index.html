@@ -28,6 +28,7 @@ button:disabled{background:#9bbce0}
 .badge{font-size:10px;padding:2px 6px;border-radius:4px;background:#eef3fb;color:#0b5ed7}
 .badge.b{background:#fff1e6;color:#c05621}
 .badge.y{background:#e8f6ee;color:#1a7f4b}
+.badge.n{background:#f3e8fd;color:#6b21a8}
 .ops{display:flex;gap:8px;margin-left:auto}
 .ops button{padding:6px 12px;font-size:13px;background:#eef3fb;color:#0b5ed7;border-radius:6px}
 .ops button.pri{background:#007bff;color:#fff}
@@ -85,6 +86,7 @@ button:disabled{background:#9bbce0}
   <span class="st" data-k="btsow"><i class="dot"></i> BTSOW</span>
   <span class="st" data-k="tpb"><i class="dot"></i> TPB</span>
   <span class="st" data-k="yts"><i class="dot"></i> YTS</span>
+  <span class="st" data-k="nyaa"><i class="dot"></i> NYAA</span>
   <button class="px" id="px" onclick="toggleProxy()">代理:关</button>
   <span class="st-ts" id="st-ts"></span>
 </div>
@@ -93,6 +95,7 @@ button:disabled{background:#9bbce0}
   <div class="tab" data-src="btsow" onclick="setTab(this)">BTSOW</div>
   <div class="tab" data-src="tpb" onclick="setTab(this)">TPB</div>
   <div class="tab" data-src="yts" onclick="setTab(this)">YTS</div>
+  <div class="tab" data-src="nyaa" onclick="setTab(this)">NYAA</div>
 </div>
 <div id="out"><div class="hint">输入关键词开始搜索</div></div>
 
@@ -240,6 +243,22 @@ async function srcYTS(q){
     return rows;
   } catch(e) { return []; }
 }
+// Nyaa：番剧/日影向，**只在代理开着时可用**（国内直连实测 12 秒超时）。
+// CGI 已把 HTML 解析成 {data:[...]}，字段名与 apibay 对齐，size 是数字字节数。
+// 它是唯一支持中文关键词的源（实测搜"进击的巨人"返回 75 条），
+// 所以中文搜索时它比 apibay 有用得多。
+async function srcNyaa(q){
+  try {
+    // 后端最坏 24 秒（代理 16 + 直连 8），这里给 26 秒
+    const r = await fetchT('cgi-bin/nyaa.cgi?q=' + encodeURIComponent(q), {}, 26000);
+    const j = await r.json();
+    const d = (j && Array.isArray(j.data)) ? j.data : [];
+    return d
+      .filter(x => x && isHash(x.hash))
+      .map(x => ({hash:x.hash, name:x.name, size:+x.size||0,
+                  seeders:+x.seeders||0, leechers:+x.leechers||0, src:'nyaa'}));
+  } catch(e) { return []; }
+}
 // 页面加载后立即测一次，之后按 next 间隔循环
 async function checkStatus(){
   const sb = document.getElementById('statusbar');
@@ -347,7 +366,7 @@ async function doSearch(){
     if (ALL.length) go.disabled = false;
   };
 
-  await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcTPB(q).then(merge)]);
+  await Promise.all([srcBtsow(q).then(merge), srcYTS(q).then(merge), srcNyaa(q).then(merge), srcTPB(q).then(merge)]);
 
   if (myReq !== REQ) return;
   go.disabled = false;
@@ -365,7 +384,7 @@ function render(){
     <div class="item">
       <div class="name">${esc(x.name)}</div>
       <div class="meta">
-        <span class="badge ${x.src==='btsow'?'b':(x.src==='yts'?'y':'')}">${x.src==='btsow'?'BTSOW':(x.src==='yts'?'YTS':'TPB')}</span>
+        <span class="badge ${x.src==='btsow'?'b':(x.src==='yts'?'y':(x.src==='nyaa'?'n':''))}">${x.src==='btsow'?'BTSOW':(x.src==='yts'?'YTS':(x.src==='nyaa'?'NYAA':'TPB'))}</span>
         <span>${fmtSize(x.size)}</span>
         ${x.seeders===null ? (x.updated?`<span class="time">🕒 ${fmtTime(x.updated)}</span>`:'') : `<span class="seed">▲ ${x.seeders}</span><span class="leech">▼ ${x.leechers}</span>`}
         <span class="ops">

@@ -1,5 +1,26 @@
 # 更新日志
 
+## 2026-10-31 新增第四源：Nyaa（需代理）
+
+有了可用代理之后重测此前全部连不通的站，60+ 个里挑出 4 个代理下可用的，最终接入 **Nyaa**。
+
+- **Nyaa（`nyaa.si`）**：番剧/日影向，**唯一支持中文关键词的源**（实测搜「进击的巨人」75 条、标题中文完整；apibay 完全搜不出中文）。直连实测 12 秒超时必死，代理下 2.2~2.4 秒。
+  - 无可用 JSON API（`/api/v1/search` 404），只能解析 HTML，故在 `nyaa.cgi` 里转成 JSON 再给前端。
+  - **必须用临时文件接 curl 输出**：中文页面 133768 字节，用 `HTML=$(curl ...)` 捕获后内容会丢（`${#HTML}` 报 133768 却为空），`curl -o 文件` 解析正常。多字节大响应用 shell 变量接是坑。
+  - `--compressed` 收益明显：109612 → 14474 字节，8 秒级降到 2.2 秒。
+- 其余代理下可用但未接入（响应慢或需跳转多次，收益低）：TorrentKitty（8.9s）、SolidTorrents→bitsearch.eu（7.2s）、LimeTorrents→limetorrents.fun（7.2s）。
+- 大量站仍不可用：1337x/katcr（403 反爬）、btdig（429 限流）、knaben（503）、magnetdl/pirateiro（超时）、eztv（403）。
+- `status.cgi` 扩到四源；Nyaa 只探代理（直连必死，探了白占 5 秒预算），代理没开时如实标灰。
+- `deploy.sh` 自检清单加 `nyaa.cgi`；README / deploy.md 同步四源。
+
+实测（K40，代理开）：
+
+```
+status:  btsow/tpb/yts/nyaa 全部 ok:true
+nyaa 中文「进击的巨人」: 200 / 2.2s / 75 条
+nyaa 英文 matrix:        200 / 2.4s / 75 条
+代理关: nyaa 状态 timeout（灰）、搜索返回空不报错
+```
 
 ## 2026-10-30 新增搜索历史与下载进度
 

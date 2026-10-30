@@ -31,6 +31,9 @@ BTSOW_URL='https://btsow.live/bts/data/api/search'
 # 不要带 cat=0：apibay 把它当真实分类，会稳定返回占位记录（见 search.cgi）
 TPB_URL='https://apibay.org/q.php?q=inception'
 YTS_URL='https://yts.gg/api/v2/list_movies.json?query_term=inception&limit=1'
+# Nyaa 只在代理下可用（直连实测 12 秒超时），所以它只探代理那条路；
+# 代理没开时它必然是灰的，这是事实，不该谎报绿点。
+NYAA_URL='https://nyaa.si/?q=naruto&c=0_0&f=0'
 
 # 找一个可写的临时目录用于收集并行结果
 TMP=""
@@ -63,11 +66,16 @@ if [ -n "$TMP" ]; then
       "$YTS_URL" > "$B.3p" 2>/dev/null &
     "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
       "$YTS_URL" > "$B.3d" 2>/dev/null &
+    # Nyaa 只探代理：它直连必死，探直连只会白等 5 秒
+    "$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 6 -A "$UA" \
+      "$NYAA_URL" > "$B.4" 2>/dev/null &
   else
     "$CURL" -s -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
       "$TPB_URL" > "$B.2d" 2>/dev/null &
     "$CURL" -sL -o /dev/null -w '%{http_code}' --max-time 5 -A "$UA" \
       "$YTS_URL" > "$B.3d" 2>/dev/null &
+    # 代理没开：Nyaa 直接标灰，不去探（探了也是 12 秒超时，白占 5 秒预算）
+    echo "000" > "$B.4" 2>/dev/null &
   fi
 
   wait
@@ -75,12 +83,13 @@ if [ -n "$TMP" ]; then
   btsow_code=$(cat "$B.1" 2>/dev/null)
   tpb_code=$(cat "$B.2d" 2>/dev/null)
   yts_code=$(cat "$B.3d" 2>/dev/null)
+  nyaa_code=$(cat "$B.4" 2>/dev/null)
   # 代理那条路只要也拿到 200，就覆盖成 200（任一通即算通）
   if [ -n "$PROXY_OPT" ]; then
     [ "$(cat "$B.2p" 2>/dev/null)" = "200" ] && tpb_code=200
     [ "$(cat "$B.3p" 2>/dev/null)" = "200" ] && yts_code=200
   fi
-  rm -f "$B.1" "$B.2p" "$B.2d" "$B.3p" "$B.3d"
+  rm -f "$B.1" "$B.2p" "$B.2d" "$B.3p" "$B.3d" "$B.4"
 else
   # 没有可写临时目录时退回串行，超时收短以控制总时长
   btsow_code=$("$CURL" -s -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" -X POST \
@@ -90,20 +99,25 @@ else
     "$TPB_URL" 2>/dev/null)
   yts_code=$("$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
     "$YTS_URL" 2>/dev/null)
+  nyaa_code=$("$CURL" $PROXY_OPT -sL -o /dev/null -w '%{http_code}' --max-time 3 -A "$UA" \
+    "$NYAA_URL" 2>/dev/null)
 fi
 
 btsow_ok='false'
 tpb_ok='false'
 yts_ok='false'
+nyaa_ok='false'
 [ "$btsow_code" = "200" ] && btsow_ok='true'
 [ "$tpb_code" = "200" ] && tpb_ok='true'
 [ "$yts_code" = "200" ] && yts_ok='true'
+[ "$nyaa_code" = "200" ] && nyaa_ok='true'
 
 # curl 连不上/超时都会输出 "000"，统一成 timeout，前端才能当成"未知"显示灰点。
 # 否则 000 会走到非 200 分支被标成红点，实测 apibay 慢的时候必现误报。
 [ "$btsow_code" = "000" ] && btsow_code=''
 [ "$tpb_code" = "000" ] && tpb_code=''
 [ "$yts_code" = "000" ] && yts_code=''
+[ "$nyaa_code" = "000" ] && nyaa_code=''
 
-echo "{\"btsow\":{\"ok\":$btsow_ok,\"code\":\"${btsow_code:-timeout}\"},\"tpb\":{\"ok\":$tpb_ok,\"code\":\"${tpb_code:-timeout}\"},\"yts\":{\"ok\":$yts_ok,\"code\":\"${yts_code:-timeout}\"},\"t\":$(date +%s)}"
+echo "{\"btsow\":{\"ok\":$btsow_ok,\"code\":\"${btsow_code:-timeout}\"},\"tpb\":{\"ok\":$tpb_ok,\"code\":\"${tpb_code:-timeout}\"},\"yts\":{\"ok\":$yts_ok,\"code\":\"${yts_code:-timeout}\"},\"nyaa\":{\"ok\":$nyaa_ok,\"code\":\"${nyaa_code:-timeout}\"},\"t\":$(date +%s)}"
 exit 0
