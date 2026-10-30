@@ -38,8 +38,10 @@ FORCE=0
 [ "$1" = "--force" ] && FORCE=1
 TODAY=$(date +%Y%m%d)
 if [ "$FORCE" != 1 ]; then
-  H=$(date +%H)
-  [ "$H" != 03 ] && exit 0
+  H=$((10#$(date +%H)))
+  # 00-02 is too early: the site publishes later, and an unpublished date
+  # returns a 200 HTML notice. Retry every hour after 03:00 until we get it.
+  [ "$H" -lt 3 ] && exit 0
   [ "$(cat "$FLAG" 2>/dev/null)" = "$TODAY" ] && exit 0
 fi
 
@@ -64,9 +66,12 @@ for u in "https://node.v2rayfree.org/uploads/$Y/$M10/$Y$MD.json" \
   say "sub rejected $u"
 done
 if [ "$got" != 1 ]; then
+  # Deliberately NO flag write here: today's file may not be published yet.
+  # An hourly retry is cheap and will pick it up as soon as it appears.
+  # (Contrast with the branches below -- once we HAVE the file, its content
+  #  is fixed forever, so retrying gains nothing and we do set the flag.)
   rm -f "$D/sub.dl"
-  echo "$TODAY" > "$FLAG"
-  say "no usable subscription, keeping config"
+  say "today's subscription not available yet, will retry next hour"
   exit 0
 fi
 

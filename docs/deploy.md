@@ -127,13 +127,13 @@ sing-box 合法出站类型名：`shadowsocks` / `vmess` / `trojan` / `vless` / 
 
 设备里装了自动轮换，逻辑全在 `/data/adb/srv/magpie-proxy/node-update.sh`：
 
-- 触发：`node-scheduler.sh` 每小时醒一次调它；脚本自己判断只在 **03:00–03:59** 干实事，当天干过（`update.flag`）就退出，所以实际每天一轮。
+- 触发：`node-scheduler.sh` 每小时醒一次调它；脚本自门控——**凌晨 3 点起每小时试，直到拿到当天订阅**（拿到并处理完才写 `update.flag`，当天不再重复）。3 点前不干活：网站发布时间未知，而未发布的日期返回的是 200 + HTML 提示页，需要留给下一小时重试。
 - 流程：拉当天订阅（URL 规律 `uploads/<年>/<月不补零>/<年月日紧凑>.json`，两种月份形态都试）→ 只提取 shadowsocks 节点（限 4 种标准 method）→ `nc -z` 批量 TCP 探活 → 可达的前 8 台组成 urltest 组 → **临时实例（10809 端口）发真实请求验证 gstatic 通了才换** → 原子替换 `config.json`；若代理正开着，自动用新配置重启实例。
 - 失败保命：订阅拉不到/解析 0 台/全不可达/新配置 `check` 不过/验证不通过——任何一步失败**原配置原状态不动**，日志写 `update.log`。
 - 开机自启：`/data/adb/service.d/magpie-node.sh`（独立新文件，没动 srv.sh）。
 - 手动强制跑一轮：`su -c 'sh /data/adb/srv/magpie-proxy/node-update.sh --force'`。
 
-实测两个坑（脚本已防）：①订阅 URL 写错也返回 **HTTP 200 + HTML 提示页**，必须校验内容（`{` 开头且含 `outbounds`），不能信状态码；②bash 风格 `echo >/dev/tcp/...` 探测在 mksh 里因 stderr 继承和 stdin 问题会全军覆没误判"0 可达"，改用 `busybox nc -z` + `</dev/null`。urltest 组自带 10 分钟选优，8 台里死几台不用等夜里。
+实测两个坑（脚本已防）：①订阅 URL 写错也返回 **HTTP 200 + HTML 提示页**，必须校验内容（`{` 开头且含 `outbounds`），不能信状态码；②bash 风格 `echo >/dev/tcp/...` 探测在 mksh 里因 stderr 继承和 stdin 问题会全军覆没误判"0 可达"，改用 `busybox nc -z` + `</dev/null`。urltest 组自带 10 分钟选优，8 台里死几台不用等夜里。③目录不可枚举（列 `uploads/2026/10/` 返回 403），好在订阅文件**按日期命名且历史文件不再变动**，所以脚本用 `date` 现算文件名直取；也正因文件到手后内容固定，一旦拿到却不可用（解析 0 台/全不可达/验证失败）就写 flag 收工、当天不再重试——免费节点是簇状生死，几小时内不会复活，反复试只添噪音。唯独"今天的文件还没出现"这一种情况不写 flag，留给下一小时。
 
 ## 六、出问题了
 
