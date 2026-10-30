@@ -1,5 +1,6 @@
 # 更新日志
 
+
 ## 2026-10-30 新增搜索历史与下载进度
 
 **搜索历史**（纯前端，存在浏览器 localStorage）
@@ -57,6 +58,16 @@
 
 **apibay 的可用性问题不是代码能解决的**，它现在经常整分钟不返回。TPB 这一源实际上处于"偶尔能用"的状态。
 
+## 2026-10-30 每日自动换节点（凌晨 3 点档）
+
+在 K40 上部署并完整实测了订阅自动轮换：
+
+- `scripts/node-update.sh`：拉 v2rayfree 当天 sing-box 订阅 → 提取 shadowsocks 节点（限 4 种标准 method）→ 批量 TCP 探活 → 可达前 8 台组成 urltest → **临时实例（10809）真实请求 gstatic 验证** → 才原子替换 config.json；代理开着时换完自动重启实例。任何一步失败原配置不动，日志 `update.log`，mkdir 锁防并发，`update.flag` 保证每天只干一次，只在 03:00–03:59 干实事，支持 `--force` 手动跑。
+- `scripts/node-scheduler.sh`：每小时醒一次调上面的脚本（自门控）。
+- `scripts/service.d-magpie-node.sh`：开机自启，独立新文件不动 srv.sh。
+- 实测（当天）：解析 10 台 ss、TCP 可达 9 台、挑 8 台、验证 204、换后 apibay 经新节点 200 + 100 条、代理关闭端口正常释放。
+
+两个实测坑（已写进脚本）：订阅 URL 错误也返回 HTTP 200 + HTML 提示页，必须验内容不能信状态码；bash 风格 `/dev/tcp` 探测在 mksh 里因 stderr/stdin 继承全军覆没，改 busybox `nc -z` + `</dev/null`。调度没走 crond：设备唯一的 crond 是 GGAT_10007 模块自带的、crontab 目录在人家模块目录里，模块更新可能被清；改用 battguard 同款 nohup 循环（该模式已稳定跑 13 天）。
 ## 2026-10-30 代理开关（sing-box）
 
 页面右上角加"代理"开关：点一下 K40 后台拉起 sing-box，搜索请求自动走它；再点关掉，闲置 600 秒看门狗自动关。动机是 apibay 从国内家庭网络经常直连不通。

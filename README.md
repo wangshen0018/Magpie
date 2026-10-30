@@ -50,6 +50,9 @@ scripts/start-service.sh 启动
 scripts/proxy-setup.sh  代理配置目录初始化
 scripts/proxy-lib.sh    代理感知库（部署到 web 根之外，判断是否走代理）
 scripts/watchdog.sh     闲置自动关代理
+scripts/node-update.sh  每日凌晨自动换订阅节点（TCP 探活+真实验证后才替换）
+scripts/node-scheduler.sh 小时级唤醒循环（触发上面那个，自带日期幂等）
+scripts/service.d-magpie-node.sh 节点轮换的开机自启（放 /data/adb/service.d/）
 static/httpd.conf       busybox httpd 配置（只有一行：*.cgi 用 sh 执行）
 docs/deploy.md          部署与排障
 ```

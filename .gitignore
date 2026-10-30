@@ -19,3 +19,10 @@ desktop.ini
 
 # 临时探测/测试脚本，不提交
 .tmp-*.sh
+run*.sh
+st*.sh
+env*.sh
+sub*.sh
+probe*.sh
+nx.sh
+fin.sh

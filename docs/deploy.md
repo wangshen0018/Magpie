@@ -123,6 +123,18 @@ sing-box 合法出站类型名：`shadowsocks` / `vmess` / `trojan` / `vless` / 
 
 实测过 v2rayfree.org 每日更新（2026-10-29 那批，445 个节点）：**能用，但可用率很低，且高度集中在个别簇**。复现验证：`shadowsocks aes-256-gcm` 那几个（同密码簇，202.50.253.x:19999）确实把 apibay 从"直连 000 超时"救成"经代理 200 + 100 条 hash"。但绝大多数节点是死的。结论：适合当备胎应急，不适合当稳定依赖，每天换订阅、可用节点说没就没。
 
+### 每日自动换节点（凌晨 3 点档）
+
+设备里装了自动轮换，逻辑全在 `/data/adb/srv/magpie-proxy/node-update.sh`：
+
+- 触发：`node-scheduler.sh` 每小时醒一次调它；脚本自己判断只在 **03:00–03:59** 干实事，当天干过（`update.flag`）就退出，所以实际每天一轮。
+- 流程：拉当天订阅（URL 规律 `uploads/<年>/<月不补零>/<年月日紧凑>.json`，两种月份形态都试）→ 只提取 shadowsocks 节点（限 4 种标准 method）→ `nc -z` 批量 TCP 探活 → 可达的前 8 台组成 urltest 组 → **临时实例（10809 端口）发真实请求验证 gstatic 通了才换** → 原子替换 `config.json`；若代理正开着，自动用新配置重启实例。
+- 失败保命：订阅拉不到/解析 0 台/全不可达/新配置 `check` 不过/验证不通过——任何一步失败**原配置原状态不动**，日志写 `update.log`。
+- 开机自启：`/data/adb/service.d/magpie-node.sh`（独立新文件，没动 srv.sh）。
+- 手动强制跑一轮：`su -c 'sh /data/adb/srv/magpie-proxy/node-update.sh --force'`。
+
+实测两个坑（脚本已防）：①订阅 URL 写错也返回 **HTTP 200 + HTML 提示页**，必须校验内容（`{` 开头且含 `outbounds`），不能信状态码；②bash 风格 `echo >/dev/tcp/...` 探测在 mksh 里因 stderr 继承和 stdin 问题会全军覆没误判"0 可达"，改用 `busybox nc -z` + `</dev/null`。urltest 组自带 10 分钟选优，8 台里死几台不用等夜里。
+
 ## 六、出问题了
 
 ### 页面打不开
